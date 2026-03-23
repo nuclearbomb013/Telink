@@ -3,13 +3,12 @@ Notification API Endpoints
 """
 
 from datetime import datetime
-from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, update
 
 from app.api.deps import get_db, get_current_active_user
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.models.notification import Notification
 from app.schemas import (
     ServiceResponse,
@@ -46,12 +45,12 @@ async def get_notifications(
     query = select(Notification).where(Notification.user_id == current_user.id)
 
     if unreadOnly:
-        query = query.where(Notification.is_read == False)
+        query = query.where(Notification.is_read.is_(False))
 
     # Filter out expired notifications
     current_time = int(datetime.utcnow().timestamp() * 1000)
     query = query.where(
-        (Notification.expires_at == None) | (Notification.expires_at > current_time)
+        (Notification.expires_at.is_(None)) | (Notification.expires_at > current_time)
     )
 
     # Sort by newest first
@@ -66,7 +65,7 @@ async def get_notifications(
     unread_query = select(func.count()).select_from(
         select(Notification).where(
             Notification.user_id == current_user.id,
-            Notification.is_read == False
+            Notification.is_read.is_(False)
         ).subquery()
     )
     unread_result = await db.execute(unread_query)
@@ -109,7 +108,7 @@ async def create_notification(
     """
     Create a notification (admin only in production).
     """
-    if not current_user or current_user.role != "admin":
+    if not current_user or current_user.role != UserRole.ADMIN:
         return ServiceResponse(
             success=False,
             error={
@@ -212,7 +211,7 @@ async def mark_all_as_read(
         update(Notification)
         .where(
             Notification.user_id == current_user.id,
-            Notification.is_read == False
+            Notification.is_read.is_(False)
         )
         .values(is_read=True)
     )
@@ -290,7 +289,7 @@ async def get_unread_count(
     result = await db.execute(
         select(func.count()).select_from(Notification).where(
             Notification.user_id == current_user.id,
-            Notification.is_read == False
+            Notification.is_read.is_(False)
         )
     )
     count = result.scalar() or 0

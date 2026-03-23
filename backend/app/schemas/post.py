@@ -4,7 +4,6 @@ Post Schemas
 
 from typing import Optional, List
 from pydantic import BaseModel, Field
-from datetime import datetime
 
 
 class PostCategory:
@@ -22,7 +21,7 @@ class PostBase(BaseModel):
     """Base post schema."""
 
     title: str = Field(..., min_length=1, max_length=255)
-    content: str = Field(..., min_length=1)
+    content: str = Field(..., min_length=1, max_length=50000)
     category: str = Field(..., description="Post category")
     tags: List[str] = Field(default_factory=list)
     cover_image: Optional[str] = None
@@ -39,7 +38,7 @@ class PostUpdate(BaseModel):
     """Update post schema."""
 
     title: Optional[str] = Field(None, min_length=1, max_length=255)
-    content: Optional[str] = Field(None, min_length=1)
+    content: Optional[str] = Field(None, min_length=1, max_length=50000)
     category: Optional[str] = None
     tags: Optional[List[str]] = None
     cover_image: Optional[str] = None

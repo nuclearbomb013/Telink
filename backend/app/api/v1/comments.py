@@ -8,8 +8,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
-from app.api.deps import get_db, get_current_user, get_current_active_user
-from app.models.user import User
+from app.api.deps import get_db, get_current_active_user
+from app.models.user import User, UserRole
 from app.models.post import Post
 from app.models.comment import Comment, CommentLike
 from app.schemas import (
@@ -51,7 +51,7 @@ async def get_comments(
     # Get top-level comments (no parent)
     query = select(Comment).where(
         Comment.post_id == postId,
-        Comment.parent_id == None,
+        Comment.parent_id.is_(None),
         Comment.is_deleted == 0
     )
 
@@ -329,7 +329,7 @@ async def delete_comment(
         )
 
     # Check permission
-    if comment.author_id != current_user.id and current_user.role not in ["admin", "moderator"]:
+    if comment.author_id != current_user.id and current_user.role not in [UserRole.ADMIN, UserRole.MODERATOR]:
         return ServiceResponse(
             success=False,
             error={

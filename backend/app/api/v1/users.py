@@ -3,14 +3,12 @@ User API Endpoints
 """
 
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select
 
-from app.api.deps import get_db, get_current_active_user, get_current_user
-from app.models.user import User
-from app.models.post import Post
-from app.models.comment import Comment
+from app.api.deps import get_db, get_current_user
+from app.models.user import User, UserRole
 from app.schemas import (
     ServiceResponse,
     UserResponse,
@@ -18,7 +16,6 @@ from app.schemas import (
     UserUpdate,
     UserStats
 )
-from app.core.exceptions import NotFoundException, ForbiddenException
 from app.core.security import validate_username
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -116,7 +113,7 @@ async def update_user(
         )
 
     # Check permission
-    if current_user.id != user_id and current_user.role != "admin":
+    if current_user.id != user_id and current_user.role != UserRole.ADMIN:
         return ServiceResponse(
             success=False,
             error={

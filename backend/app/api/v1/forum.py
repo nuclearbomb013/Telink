@@ -3,14 +3,16 @@ Forum Post API Endpoints
 """
 
 import re
+import random
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, update
+from sqlalchemy.exc import IntegrityError
 
-from app.api.deps import get_db, get_current_user, get_current_active_user, require_roles
-from app.models.user import User
+from app.api.deps import get_db, get_current_active_user, require_roles
+from app.models.user import User, UserRole
 from app.models.post import Post, PostTag, PostLike
 from app.schemas import (
     ServiceResponse,
@@ -21,7 +23,6 @@ from app.schemas import (
     PostListResult,
     PostStats
 )
-from app.core.exceptions import NotFoundException, ForbiddenException
 
 router = APIRouter(prefix="/forum", tags=["Forum"])
 
@@ -41,18 +42,31 @@ def generate_slug(title: str) -> str:
     return slug[:100] or 'post'
 
 
-async def get_unique_slug(db: AsyncSession, title: str) -> str:
-    """Generate unique slug for post."""
+async def get_unique_slug(db: AsyncSession, title: str, max_attempts: int = 10) -> str:
+    """
+    Generate unique slug for post.
+
+    Uses database-level unique constraint and retry mechanism to handle race conditions.
+    If a race condition occurs, the caller should retry with a new slug.
+    """
     base_slug = generate_slug(title)
+    # Add random suffix to reduce collision probability in concurrent scenarios
     slug = base_slug
     counter = 1
 
-    while True:
+    for attempt in range(max_attempts):
         result = await db.execute(select(Post).where(Post.slug == slug))
         if not result.scalar_one_or_none():
             return slug
         counter += 1
-        slug = f"{base_slug}-{counter}"
+        # Add random component to reduce collision in concurrent creates
+        if attempt > 0:
+            slug = f"{base_slug}-{counter}-{random.randint(100, 999)}"
+        else:
+            slug = f"{base_slug}-{counter}"
+
+    # Fallback: use timestamp-based unique slug
+    return f"{base_slug}-{int(datetime.utcnow().timestamp())}"
 
 
 @router.get("/posts", response_model=ServiceResponse[PostListResult])
@@ -183,9 +197,13 @@ async def get_post(
             }
         )
 
-    # Increment view count
-    post.views += 1
+    # Increment view count atomically to avoid race conditions
+    await db.execute(
+        update(Post).where(Post.id == post_id).values(views=Post.views + 1)
+    )
     await db.commit()
+    # Refresh to get updated view count
+    await db.refresh(post)
 
     # Get tags
     tag_result = await db.execute(select(PostTag).where(PostTag.post_id == post.id))
@@ -238,9 +256,13 @@ async def get_post_by_slug(
             }
         )
 
-    # Increment view count
-    post.views += 1
+    # Increment view count atomically to avoid race conditions
+    await db.execute(
+        update(Post).where(Post.id == post.id).values(views=Post.views + 1)
+    )
     await db.commit()
+    # Refresh to get updated view count
+    await db.refresh(post)
 
     # Get tags
     tag_result = await db.execute(select(PostTag).where(PostTag.post_id == post.id))
@@ -283,6 +305,7 @@ async def create_post(
     Create a new post.
 
     Requires authentication.
+    Uses retry mechanism to handle slug race conditions.
     """
     if not current_user:
         return ServiceResponse(
@@ -293,65 +316,83 @@ async def create_post(
             }
         )
 
-    # Generate unique slug
-    slug = await get_unique_slug(db, post_data.title)
+    # Retry mechanism for slug race condition
+    max_retries = 3
 
-    # Create post
-    post = Post(
-        title=post_data.title,
-        slug=slug,
-        content=post_data.content,
-        excerpt=post_data.excerpt,
-        cover_image=post_data.cover_image,
-        author_id=current_user.id,
-        author_name=current_user.username,
-        author_avatar=current_user.avatar,
-        category=post_data.category
-    )
-    db.add(post)
-    await db.flush()
+    for attempt in range(max_retries):
+        try:
+            # Generate unique slug
+            slug = await get_unique_slug(db, post_data.title)
 
-    # Add tags
-    if post_data.tags:
-        for tag in post_data.tags:
-            if tag.strip():
-                post_tag = PostTag(
-                    post_id=post.id,
-                    tag=tag.strip(),
-                    created_at=int(datetime.utcnow().timestamp() * 1000)
+            # Create post
+            post = Post(
+                title=post_data.title,
+                slug=slug,
+                content=post_data.content,
+                excerpt=post_data.excerpt,
+                cover_image=post_data.cover_image,
+                author_id=current_user.id,
+                author_name=current_user.username,
+                author_avatar=current_user.avatar,
+                category=post_data.category
+            )
+            db.add(post)
+            await db.flush()
+
+            # Add tags
+            if post_data.tags:
+                for tag in post_data.tags:
+                    if tag.strip():
+                        post_tag = PostTag(
+                            post_id=post.id,
+                            tag=tag.strip(),
+                            created_at=int(datetime.utcnow().timestamp() * 1000)
+                        )
+                        db.add(post_tag)
+
+            # Update user post count
+            current_user.post_count += 1
+
+            await db.commit()
+            await db.refresh(post)
+
+            return ServiceResponse(
+                success=True,
+                data=PostResponse(
+                    id=post.id,
+                    title=post.title,
+                    slug=post.slug,
+                    content=post.content,
+                    excerpt=post.excerpt,
+                    cover_image=post.cover_image,
+                    author_id=post.author_id,
+                    author_name=post.author_name,
+                    author_avatar=post.author_avatar,
+                    category=post.category,
+                    tags=post_data.tags or [],
+                    views=post.views,
+                    likes=post.likes,
+                    reply_count=post.reply_count,
+                    is_pinned=post.is_pinned,
+                    is_locked=post.is_locked,
+                    is_featured=post.is_featured,
+                    is_solved=post.is_solved,
+                    created_at=int(post.created_at.timestamp() * 1000)
                 )
-                db.add(post_tag)
-
-    # Update user post count
-    current_user.post_count += 1
-
-    await db.commit()
-    await db.refresh(post)
-
-    return ServiceResponse(
-        success=True,
-        data=PostResponse(
-            id=post.id,
-            title=post.title,
-            slug=post.slug,
-            content=post.content,
-            excerpt=post.excerpt,
-            cover_image=post.cover_image,
-            author_id=post.author_id,
-            author_name=post.author_name,
-            author_avatar=post.author_avatar,
-            category=post.category,
-            tags=post_data.tags or [],
-            views=post.views,
-            likes=post.likes,
-            reply_count=post.reply_count,
-            is_pinned=post.is_pinned,
-            is_locked=post.is_locked,
-            is_featured=post.is_featured,
-            is_solved=post.is_solved,
-            created_at=int(post.created_at.timestamp() * 1000)
-        )
-    )
+            )
+        except IntegrityError:
+            # Slug conflict - rollback and retry
+            await db.rollback()
+            if attempt < max_retries - 1:
+                continue
+            # Max retries reached
+            return ServiceResponse(
+                success=False,
+                error={
+                    "code": "SLUG_CONFLICT",
+                    "message": "Failed to generate unique slug after multiple attempts"
+                }
+            )
 
 
 @router.put("/posts/{post_id}", response_model=ServiceResponse[PostResponse])
@@ -389,7 +430,7 @@ async def update_post(
         )
 
     # Check permission
-    if post.author_id != current_user.id and current_user.role not in ["admin", "moderator"]:
+    if post.author_id != current_user.id and current_user.role not in [UserRole.ADMIN, UserRole.MODERATOR]:
         return ServiceResponse(
             success=False,
             error={
@@ -506,7 +547,7 @@ async def delete_post(
         )
 
     # Check permission
-    if post.author_id != current_user.id and current_user.role not in ["admin", "moderator"]:
+    if post.author_id != current_user.id and current_user.role not in [UserRole.ADMIN, UserRole.MODERATOR]:
         return ServiceResponse(
             success=False,
             error={

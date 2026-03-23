@@ -2,7 +2,7 @@
 User Model
 """
 
-from sqlalchemy import Column, String, Text, Integer, Boolean, ForeignKey
+from sqlalchemy import Column, String, Text, Integer, Boolean, ForeignKey, Enum as SQLEnum
 from sqlalchemy.orm import relationship
 import enum
 
@@ -26,7 +26,7 @@ class User(BaseModel):
     password_hash = Column(String(255), nullable=False)
     avatar = Column(Text, nullable=True)
     bio = Column(Text, nullable=True)
-    role = Column(String(20), default="user", nullable=False)
+    role = Column(SQLEnum(UserRole), default=UserRole.USER, nullable=False)  # type: ignore[var-annotated]
     post_count = Column(Integer, default=0, nullable=False)
     comment_count = Column(Integer, default=0, nullable=False)
     like_count = Column(Integer, default=0, nullable=False)
@@ -52,7 +52,7 @@ class User(BaseModel):
             "username": self.username,
             "avatar": self.avatar,
             "bio": self.bio,
-            "role": self.role,
+            "role": self.role.value if self.role else "user",
             "post_count": self.post_count,
             "comment_count": self.comment_count,
             "like_count": self.like_count,
