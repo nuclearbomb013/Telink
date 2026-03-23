@@ -43,8 +43,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setCurrentUser(user);
         setIsAuthenticated(true);
       }
-    } catch (error) {
-      console.error('Auth initialization failed:', error);
+    } catch {
+      console.error('Auth initialization failed');
     } finally {
       setLoading(false);
     }
@@ -79,8 +79,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // Dispatch storage event to notify other tabs/components
       window.dispatchEvent(new Event('storage'));
-    } catch (error) {
-      console.error('Logout failed:', error);
+    } catch {
+      console.error('Logout failed');
       // 即使失败也要重置本地状态
       setCurrentUser(null);
       setIsAuthenticated(false);
@@ -98,7 +98,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setCurrentUser(null);
         setIsAuthenticated(false);
       }
-    } catch (error) {
+    } catch {
       setCurrentUser(null);
       setIsAuthenticated(false);
     }

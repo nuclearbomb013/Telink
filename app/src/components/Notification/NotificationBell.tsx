@@ -71,6 +71,8 @@ const NotificationBell = () => {
 
     // 如果有 actionUrl，跳转
     if (notification.actionUrl) {
+      // window.location.href 是标准的页面导航方式
+      // eslint-disable-next-line react-hooks/immutability
       window.location.href = notification.actionUrl;
     }
 

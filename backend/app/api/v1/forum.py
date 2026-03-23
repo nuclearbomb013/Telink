@@ -3,8 +3,8 @@ Forum Post API Endpoints
 """
 
 import re
-import random
-from datetime import datetime
+import secrets
+from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -61,12 +61,12 @@ async def get_unique_slug(db: AsyncSession, title: str, max_attempts: int = 10) 
         counter += 1
         # Add random component to reduce collision in concurrent creates
         if attempt > 0:
-            slug = f"{base_slug}-{counter}-{random.randint(100, 999)}"
+            slug = f"{base_slug}-{counter}-{secrets.randbelow(900) + 100}"
         else:
             slug = f"{base_slug}-{counter}"
 
     # Fallback: use timestamp-based unique slug
-    return f"{base_slug}-{int(datetime.utcnow().timestamp())}"
+    return f"{base_slug}-{int(datetime.now(timezone.utc).timestamp())}"
 
 
 @router.get("/posts", response_model=ServiceResponse[PostListResult])
@@ -345,8 +345,7 @@ async def create_post(
                     if tag.strip():
                         post_tag = PostTag(
                             post_id=post.id,
-                            tag=tag.strip(),
-                            created_at=int(datetime.utcnow().timestamp() * 1000)
+                            tag=tag.strip()
                         )
                         db.add(post_tag)
 
@@ -456,7 +455,7 @@ async def update_post(
     if post_data.category:
         post.category = post_data.category
 
-    post.updated_at = datetime.utcnow()
+    post.updated_at = datetime.now(timezone.utc)
 
     # Update tags
     if post_data.tags is not None:
@@ -474,8 +473,7 @@ async def update_post(
             if tag.strip():
                 post_tag = PostTag(
                     post_id=post.id,
-                    tag=tag.strip(),
-                    created_at=int(datetime.utcnow().timestamp() * 1000)
+                    tag=tag.strip()
                 )
                 db.add(post_tag)
 
@@ -653,7 +651,7 @@ async def toggle_pin(
         )
 
     post.is_pinned = not post.is_pinned
-    post.updated_at = datetime.utcnow()
+    post.updated_at = datetime.now(timezone.utc)
     await db.commit()
 
     return ServiceResponse(
@@ -685,7 +683,7 @@ async def toggle_lock(
         )
 
     post.is_locked = not post.is_locked
-    post.updated_at = datetime.utcnow()
+    post.updated_at = datetime.now(timezone.utc)
     await db.commit()
 
     return ServiceResponse(

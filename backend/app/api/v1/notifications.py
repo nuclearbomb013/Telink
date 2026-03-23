@@ -2,7 +2,7 @@
 Notification API Endpoints
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, update
@@ -48,7 +48,7 @@ async def get_notifications(
         query = query.where(Notification.is_read.is_(False))
 
     # Filter out expired notifications
-    current_time = int(datetime.utcnow().timestamp() * 1000)
+    current_time = int(datetime.now(timezone.utc).timestamp() * 1000)
     query = query.where(
         (Notification.expires_at.is_(None)) | (Notification.expires_at > current_time)
     )

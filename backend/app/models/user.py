@@ -2,7 +2,7 @@
 User Model
 """
 
-from sqlalchemy import Column, String, Text, Integer, Boolean, ForeignKey, Enum as SQLEnum
+from sqlalchemy import Column, String, Text, Integer, Boolean, ForeignKey, Enum as SQLEnum, BigInteger
 from sqlalchemy.orm import relationship
 import enum
 
@@ -70,7 +70,7 @@ class RefreshToken(BaseModel):
 
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
     token_hash = Column(String(255), unique=True, nullable=False)
-    expires_at = Column(Integer, nullable=False)  # Unix timestamp in milliseconds
+    expires_at = Column(BigInteger, nullable=False)  # Unix timestamp in milliseconds
     revoked = Column(Boolean, default=False, nullable=False)
 
     # Relationships
@@ -87,7 +87,7 @@ class PasswordResetToken(BaseModel):
 
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
     token_hash = Column(String(255), unique=True, nullable=False)
-    expires_at = Column(Integer, nullable=False)  # Unix timestamp in milliseconds
+    expires_at = Column(BigInteger, nullable=False)  # Unix timestamp in milliseconds
     used = Column(Boolean, default=False, nullable=False)
 
     # Relationships

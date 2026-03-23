@@ -64,6 +64,7 @@ const ForumCreatePage = () => {
       // 未登录，跳转到登录页或首页
       navigate('/');
     } else {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCurrentUser(user);
     }
   }, [navigate]);

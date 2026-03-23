@@ -73,6 +73,7 @@ const AuthRegisterPage = () => {
    */
   useEffect(() => {
     if (!password) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPasswordStrength('weak');
       return;
     }

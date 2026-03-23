@@ -3,7 +3,7 @@
  * 支持语法高亮和优雅的排版
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useMemo } from 'react';
 import { marked } from 'marked';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/atom-one-dark.css';
@@ -32,7 +32,7 @@ function renderMarkdown(content: any): string {
     try {
       const stringContent = JSON.stringify(content);
       return `<p class="text-red-500">内容格式错误，显示原始内容：</p><pre class="whitespace-pre-wrap font-mono text-sm">${escapeHtml(stringContent)}</pre>`;
-    } catch (e) {
+    } catch {
       return '<p class="text-red-500">内容格式严重错误，无法渲染</p>';
     }
   }
@@ -80,33 +80,15 @@ function escapeHtml(unsafe: string): string {
 
 const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className = '' }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [renderedContent, setRenderedContent] = useState<string>('');
-  const [isLoading, setIsLoading] = useState(true);
 
-  // 渲染 Markdown 内容
-  useEffect(() => {
-    let isMounted = true;
-    setIsLoading(true);
-
+  // 渲染 Markdown 内容 - 使用 useMemo 避免在 effect 中调用 setState
+  const renderedHtml = useMemo(() => {
     try {
-      const html = renderMarkdown(content);
-      if (isMounted) {
-        setRenderedContent(html);
-        setIsLoading(false);
-      }
+      return renderMarkdown(content);
     } catch (err) {
       console.error('Render error:', err);
-      if (isMounted) {
-        setRenderedContent(
-          `<pre class="whitespace-pre-wrap font-mono text-sm">${content}</pre>`
-        );
-        setIsLoading(false);
-      }
+      return `<pre class="whitespace-pre-wrap font-mono text-sm">${escapeHtml(content)}</pre>`;
     }
-
-    return () => {
-      isMounted = false;
-    };
   }, [content]);
 
   // 处理复制代码功能
@@ -136,21 +118,13 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className 
 
     container.addEventListener('click', handleCopyClick);
     return () => container.removeEventListener('click', handleCopyClick);
-  }, [renderedContent]);
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="w-6 h-6 border-2 border-brand-border border-t-brand-text rounded-full animate-spin" />
-      </div>
-    );
-  }
+  }, [renderedHtml]);
 
   return (
     <div
       ref={containerRef}
       className={`markdown-content ${className}`}
-      dangerouslySetInnerHTML={{ __html: renderedContent }}
+      dangerouslySetInnerHTML={{ __html: renderedHtml }}
     />
   );
 };

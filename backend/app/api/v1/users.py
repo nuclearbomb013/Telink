@@ -2,6 +2,7 @@
 User API Endpoints
 """
 
+from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -51,6 +52,7 @@ async def get_user(
             role=user.role,
             post_count=user.post_count,
             comment_count=user.comment_count,
+            like_count=user.like_count,
             created_at=int(user.created_at.timestamp() * 1000)
         )
     )
@@ -86,6 +88,7 @@ async def get_user_by_username(
             role=user.role,
             post_count=user.post_count,
             comment_count=user.comment_count,
+            like_count=user.like_count,
             created_at=int(user.created_at.timestamp() * 1000)
         )
     )
@@ -169,8 +172,7 @@ async def update_user(
     if update_data.bio is not None:
         user.bio = update_data.bio
 
-    from datetime import datetime
-    user.updated_at = datetime.utcnow()
+    user.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(user)
 

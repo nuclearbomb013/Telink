@@ -100,14 +100,15 @@ const AuthLoginPage = () => {
 
   /**
    * 填充测试账号
+   * 注意：密码需满足后端要求：至少8字符，至少2种字符类型
    */
   const fillTestAccount = (type: 'admin' | 'user') => {
     if (type === 'admin') {
       setUsername('管理员');
-      setPassword('admin123');
+      setPassword('Admin123');  // 8字符，包含大写字母和数字
     } else {
-      setUsername('React 爱好者');
-      setPassword('user123');
+      setUsername('React爱好者');  // 移除空格，符合后端用户名规则
+      setPassword('User1234');  // 8字符，包含大写字母和数字
     }
     setErrors({});
     clearError?.();

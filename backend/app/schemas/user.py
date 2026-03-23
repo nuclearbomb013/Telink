@@ -3,8 +3,64 @@ User Schemas
 """
 
 from typing import Optional
-from pydantic import BaseModel, Field
-from datetime import datetime
+from pydantic import BaseModel, Field, field_validator, ConfigDict
+from urllib.parse import urlparse
+
+
+# Allowed avatar URL domains (whitelist) - same as auth.py
+ALLOWED_AVATAR_DOMAINS = [
+    "avatars.githubusercontent.com",
+    "github.com",
+    "gitlab.com",
+    "gravatar.com",
+    "cdn.discordapp.com",
+    "cloudinary.com",
+    "res.cloudinary.com",
+    "s3.amazonaws.com",
+    "storage.googleapis.com",
+    "cdn.jsdelivr.net",
+    "imgur.com",
+    "i.imgur.com",
+    "localhost",
+    "127.0.0.1",
+]
+
+
+def validate_avatar_url(v: Optional[str]) -> Optional[str]:
+    """Validate avatar URL against whitelist."""
+    if v is None:
+        return v
+
+    if len(v) > 2000:
+        raise ValueError('Avatar URL must be less than 2000 characters')
+
+    try:
+        parsed = urlparse(v)
+    except Exception:
+        raise ValueError('Invalid avatar URL format')
+
+    if parsed.scheme not in ('http', 'https'):
+        raise ValueError('Avatar URL must use http or https protocol')
+
+    if not parsed.netloc:
+        raise ValueError('Avatar URL must have a valid domain')
+
+    domain = parsed.netloc.lower()
+    if ':' in domain:
+        domain = domain.split(':')[0]
+
+    is_allowed = False
+    for allowed_domain in ALLOWED_AVATAR_DOMAINS:
+        if domain == allowed_domain or domain.endswith('.' + allowed_domain):
+            is_allowed = True
+            break
+
+    if not is_allowed:
+        raise ValueError(
+            f'Avatar URL domain not allowed. Allowed domains: {", ".join(ALLOWED_AVATAR_DOMAINS[:5])}...'
+        )
+
+    return v
 
 
 class UserBase(BaseModel):
@@ -29,9 +85,16 @@ class UserUpdate(BaseModel):
     avatar: Optional[str] = None
     bio: Optional[str] = Field(None, max_length=500)
 
+    @field_validator('avatar')
+    @classmethod
+    def validate_avatar(cls, v):
+        return validate_avatar_url(v)
+
 
 class UserResponse(BaseModel):
     """User response schema."""
+
+    model_config = ConfigDict(from_attributes=True)
 
     id: int
     username: str
@@ -44,12 +107,11 @@ class UserResponse(BaseModel):
     like_count: int = 0
     created_at: int  # Unix timestamp in milliseconds
 
-    class Config:
-        from_attributes = True
-
 
 class UserPublic(BaseModel):
     """Public user info (no sensitive data)."""
+
+    model_config = ConfigDict(from_attributes=True)
 
     id: int
     username: str
@@ -58,10 +120,8 @@ class UserPublic(BaseModel):
     role: str = "user"
     post_count: int = 0
     comment_count: int = 0
+    like_count: int = 0
     created_at: int
-
-    class Config:
-        from_attributes = True
 
 
 class UserStats(BaseModel):

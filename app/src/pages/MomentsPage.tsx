@@ -244,15 +244,6 @@ const CommentModal = ({
   const commentsEndRef = useRef<HTMLDivElement>(null);
 
   /**
-   * 加载评论
-   */
-  useEffect(() => {
-    if (isOpen && momentId) {
-      loadComments();
-    }
-  }, [isOpen, momentId]);
-
-  /**
    * 加载评论列表
    */
   const loadComments = async () => {
@@ -263,6 +254,16 @@ const CommentModal = ({
     }
     setIsLoading(false);
   };
+
+  /**
+   * 加载评论
+   */
+  useEffect(() => {
+    if (isOpen && momentId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      loadComments();
+    }
+  }, [isOpen, momentId]);
 
   /**
    * 滚动到底部
@@ -298,10 +299,11 @@ const CommentModal = ({
 
   /**
    * 格式化时间
+   * 直接使用 Date.now() 获取当前时间，确保时间显示准确
    */
-  const formatTime = (timestamp: number) => {
-    const now = Date.now();
-    const diff = now - timestamp;
+  const formatTime = useCallback((timestamp: number) => {
+    const currentTime = Date.now();
+    const diff = currentTime - timestamp;
     const minutes = Math.floor(diff / 60000);
     const hours = Math.floor(diff / 3600000);
     const days = Math.floor(diff / 86400000);
@@ -310,7 +312,7 @@ const CommentModal = ({
     if (minutes < 60) return `${minutes}分钟前`;
     if (hours < 24) return `${hours}小时前`;
     return `${days}天前`;
-  };
+  }, []);
 
   if (!isOpen) return null;
 
@@ -416,8 +418,8 @@ const CommentModal = ({
 const MomentsPage = () => {
   const navigate = useNavigate();
 
-  // 用户状态
-  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+  // 用户状态 - 使用惰性初始化避免 useEffect 中的 setState
+  const [currentUser] = useState<CurrentUser | null>(() => userService.getCurrentUser());
 
   // 排序和筛选
   const [sortBy, setSortBy] = useState<SortOption>('newest');
@@ -452,14 +454,6 @@ const MomentsPage = () => {
     sortBy,
     limit: 10,
   });
-
-  /**
-   * 初始化用户
-   */
-  useEffect(() => {
-    const user = userService.getCurrentUser();
-    setCurrentUser(user);
-  }, []);
 
   /**
    * 滚动监听

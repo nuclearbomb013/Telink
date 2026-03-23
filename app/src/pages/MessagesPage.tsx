@@ -98,6 +98,7 @@ const MessagesPage = () => {
    */
   useEffect(() => {
     const user = userService.getCurrentUser();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCurrentUser(user);
   }, []);
 

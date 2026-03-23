@@ -66,13 +66,16 @@ export function useNotifications(): UseNotificationsReturn {
 
   /**
    * 初始化并订阅通知变化
+   * 这是有效的初始化模式，在组件挂载时同步通知状态
    */
   useEffect(() => {
     // 初始加载
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setState(notificationService.getState());
 
     // 订阅变化
     const unsubscribe = notificationService.subscribe(() => {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setState(notificationService.getState());
     });
 

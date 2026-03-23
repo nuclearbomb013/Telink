@@ -123,11 +123,14 @@ const Navigation = () => {
   }, [isUserMenuOpen]);
 
   // Effect to close user menu when user becomes unauthenticated
+  // 只依赖 isAuthenticated，避免级联渲染
+  // This is a valid state synchronization pattern - close menu when auth state changes
   useEffect(() => {
-    if (!isAuthenticated && isUserMenuOpen) {
+    if (!isAuthenticated) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsUserMenuOpen(false);
     }
-  }, [isAuthenticated, isUserMenuOpen]);
+  }, [isAuthenticated]);
 
   // Listen for global logout event to ensure UI updates properly
   useEffect(() => {

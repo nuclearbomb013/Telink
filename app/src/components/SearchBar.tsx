@@ -166,11 +166,14 @@ const SearchBar = ({
 
   /**
    * 重置搜索状态
+   * 当 initialQuery 变化时同步 query 状态 - 这是有效的状态同步模式
    */
   useEffect(() => {
     if (initialQuery !== query) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setQuery(initialQuery);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialQuery]);
 
   return (

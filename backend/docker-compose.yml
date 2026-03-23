@@ -1,0 +1,55 @@
+# Docker Compose configuration for TechInk Backend
+# Use Docker secrets for production deployments
+
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: techink_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER_FILE: /run/secrets/db_user
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+      POSTGRES_DB: techink
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    secrets:
+      - db_user
+      - db_password
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: techink_api
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/techink
+      - SECRET_KEY_FILE=/run/secrets/secret_key
+      - ENVIRONMENT=production
+    depends_on:
+      db:
+        condition: service_healthy
+    secrets:
+      - secret_key
+    ports:
+      - "8000:8000"
+
+secrets:
+  db_user:
+    file: ./secrets/db_user.txt
+  db_password:
+    file: ./secrets/db_password.txt
+  secret_key:
+    file: ./secrets/secret_key.txt
+
+volumes:
+  postgres_data:

@@ -2,143 +2,37 @@
  * Notification Service - 通知服务
  *
  * 提供通知的 CRUD 操作、未读计数等功能
- * 使用 localStorage 持久化存储
+ * 连接后端 FastAPI API
  */
 
-import type { Notification, CreateNotificationData, NotificationState } from './notification.types';
-
-/**
- * localStorage 键名
- */
-const STORAGE_KEYS = {
-  NOTIFICATIONS: 'techink_notifications',
-} as const;
-
-/**
- * 通知最大保留数量
- */
-const MAX_NOTIFICATIONS = 50;
-
-/**
- * 通知有效期（毫秒）- 7 天
- */
-const NOTIFICATION_EXPIRY = 7 * 24 * 60 * 60 * 1000;
+import type { Notification, NotificationType, CreateNotificationData, NotificationState } from './notification.types';
+import {
+  notificationApi,
+  type Notification as ApiNotification,
+} from '@/lib/apiClient';
+import { authService } from './auth.service';
 
 /**
  * 通知服务类
- * 使用引用计数和页面可见性 API 优化定时器管理
  */
 class NotificationService {
-  private notifications: Notification[] = [];
   private listeners: Set<() => void> = new Set();
-  private intervalId: ReturnType<typeof setInterval> | null = null;
-  private visibilityHandler: (() => void) | null = null;
-
-  constructor() {
-    this.initialize();
-  }
+  private cachedNotifications: Notification[] = [];
+  private cachedUnreadCount: number = 0;
 
   /**
-   * 初始化服务
+   * 将 API Notification 转换为本地 Notification 格式
    */
-  private initialize(): void {
-    this.loadNotifications();
-    this.cleanupExpired();
-
-    // 监听页面可见性变化
-    this.visibilityHandler = () => {
-      if (document.visibilityState === 'visible') {
-        this.startCleanupTimer();
-        this.cleanupExpired(); // 页面可见时立即清理一次
-      } else {
-        this.stopCleanupTimer();
-      }
+  private mapApiNotificationToNotification(apiNotif: ApiNotification): Notification {
+    return {
+      id: String(apiNotif.id),
+      type: apiNotif.type as NotificationType,
+      title: apiNotif.title,
+      message: apiNotif.message,
+      createdAt: apiNotif.created_at,
+      read: apiNotif.is_read,
+      actionUrl: apiNotif.link,
     };
-    document.addEventListener('visibilitychange', this.visibilityHandler);
-
-    // 初始启动定时器（如果页面可见）
-    if (document.visibilityState === 'visible') {
-      this.startCleanupTimer();
-    }
-  }
-
-  /**
-   * 启动清理定时器
-   */
-  private startCleanupTimer(): void {
-    if (this.intervalId) return; // 已在运行
-    this.intervalId = setInterval(() => this.cleanupExpired(), 60 * 1000);
-  }
-
-  /**
-   * 停止清理定时器
-   */
-  private stopCleanupTimer(): void {
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-      this.intervalId = null;
-    }
-  }
-
-  /**
-   * 销毁服务实例，清理所有资源
-   */
-  public destroy(): void {
-    this.stopCleanupTimer();
-    if (this.visibilityHandler) {
-      document.removeEventListener('visibilitychange', this.visibilityHandler);
-      this.visibilityHandler = null;
-    }
-    this.listeners.clear();
-  }
-
-  /**
-   * 从 localStorage 加载通知
-   */
-  private loadNotifications(): void {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-          this.notifications = parsed;
-          this.notifyListeners();
-          return;
-        }
-      }
-      this.notifications = [];
-    } catch (error) {
-      console.warn('加载通知失败:', error);
-      this.notifications = [];
-    }
-  }
-
-  /**
-   * 保存通知到 localStorage
-   */
-  private saveNotifications(): void {
-    try {
-      localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(this.notifications));
-      this.notifyListeners();
-    } catch (error) {
-      console.warn('保存通知失败:', error);
-    }
-  }
-
-  /**
-   * 清理过期通知
-   */
-  private cleanupExpired(): void {
-    const now = Date.now();
-    const beforeCount = this.notifications.length;
-
-    this.notifications = this.notifications.filter(
-      (n) => now - n.createdAt < NOTIFICATION_EXPIRY
-    );
-
-    if (this.notifications.length !== beforeCount) {
-      this.saveNotifications();
-    }
   }
 
   /**
@@ -146,13 +40,6 @@ class NotificationService {
    */
   private notifyListeners(): void {
     this.listeners.forEach((listener) => listener());
-  }
-
-  /**
-   * 生成唯一 ID
-   */
-  private generateId(): string {
-    return `notif_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
   }
 
   // ==================== 公开 API ====================
@@ -166,27 +53,194 @@ class NotificationService {
   }
 
   /**
-   * 获取通知状态
+   * 从服务器获取通知状态
+   */
+  async fetchState(): Promise<NotificationState> {
+    try {
+      if (!authService.isAuthenticated()) {
+        return { notifications: [], unreadCount: 0 };
+      }
+
+      const response = await notificationApi.getNotifications({ limit: 50 });
+
+      if (!response.success || !response.data) {
+        return { notifications: this.cachedNotifications, unreadCount: this.cachedUnreadCount };
+      }
+
+      const data = response.data;
+      this.cachedNotifications = data.notifications.map(this.mapApiNotificationToNotification);
+      this.cachedUnreadCount = data.unread_count;
+
+      this.notifyListeners();
+
+      return {
+        notifications: this.cachedNotifications,
+        unreadCount: this.cachedUnreadCount,
+      };
+    } catch (error) {
+      console.warn('获取通知失败:', error);
+      return { notifications: this.cachedNotifications, unreadCount: this.cachedUnreadCount };
+    }
+  }
+
+  /**
+   * 获取通知状态（使用缓存）
    */
   getState(): NotificationState {
-    const notifications = [...this.notifications];
-    const unreadCount = notifications.filter((n) => !n.read).length;
-    return { notifications, unreadCount };
+    return {
+      notifications: this.cachedNotifications,
+      unreadCount: this.cachedUnreadCount,
+    };
   }
 
   /**
    * 获取未读通知数量
    */
-  getUnreadCount(): number {
-    return this.notifications.filter((n) => !n.read).length;
+  async getUnreadCount(): Promise<number> {
+    try {
+      if (!authService.isAuthenticated()) {
+        return 0;
+      }
+
+      const response = await notificationApi.getUnreadCount();
+
+      if (!response.success || !response.data) {
+        return this.cachedUnreadCount;
+      }
+
+      this.cachedUnreadCount = response.data.count;
+      return this.cachedUnreadCount;
+    } catch (error) {
+      console.warn('获取未读数量失败:', error);
+      return this.cachedUnreadCount;
+    }
   }
 
   /**
-   * 创建通知
+   * 标记为已读
+   */
+  async markAsRead(id: string): Promise<void> {
+    try {
+      if (!authService.isAuthenticated()) {
+        return;
+      }
+
+      const response = await notificationApi.markAsRead(parseInt(id, 10));
+
+      if (response.success) {
+        // 更新本地缓存
+        const notification = this.cachedNotifications.find((n) => n.id === id);
+        if (notification && !notification.read) {
+          notification.read = true;
+          this.cachedUnreadCount = Math.max(0, this.cachedUnreadCount - 1);
+          this.notifyListeners();
+        }
+      }
+    } catch (error) {
+      console.warn('标记已读失败:', error);
+    }
+  }
+
+  /**
+   * 标记全部为已读
+   */
+  async markAllAsRead(): Promise<void> {
+    try {
+      if (!authService.isAuthenticated()) {
+        return;
+      }
+
+      const response = await notificationApi.markAllAsRead();
+
+      if (response.success) {
+        // 更新本地缓存
+        this.cachedNotifications.forEach((n) => {
+          n.read = true;
+        });
+        this.cachedUnreadCount = 0;
+        this.notifyListeners();
+      }
+    } catch (error) {
+      console.warn('标记全部已读失败:', error);
+    }
+  }
+
+  /**
+   * 删除通知
+   */
+  async deleteNotification(id: string): Promise<void> {
+    try {
+      if (!authService.isAuthenticated()) {
+        return;
+      }
+
+      const response = await notificationApi.deleteNotification(parseInt(id, 10));
+
+      if (response.success) {
+        // 更新本地缓存
+        const index = this.cachedNotifications.findIndex((n) => n.id === id);
+        if (index !== -1) {
+          const notification = this.cachedNotifications[index];
+          if (!notification.read) {
+            this.cachedUnreadCount = Math.max(0, this.cachedUnreadCount - 1);
+          }
+          this.cachedNotifications.splice(index, 1);
+          this.notifyListeners();
+        }
+      }
+    } catch (error) {
+      console.warn('删除通知失败:', error);
+    }
+  }
+
+  /**
+   * 清空所有通知（本地操作，需后端支持批量删除）
+   */
+  async clearAll(): Promise<void> {
+    // 逐个删除
+    for (const notification of this.cachedNotifications) {
+      await this.deleteNotification(notification.id);
+    }
+    this.cachedNotifications = [];
+    this.cachedUnreadCount = 0;
+    this.notifyListeners();
+  }
+
+  /**
+   * 删除已读通知
+   */
+  async clearRead(): Promise<void> {
+    const readNotifications = this.cachedNotifications.filter((n) => n.read);
+    for (const notification of readNotifications) {
+      await this.deleteNotification(notification.id);
+    }
+  }
+
+  /**
+   * 获取所有通知（使用缓存）
+   */
+  getAllNotifications(): Notification[] {
+    return [...this.cachedNotifications].sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  /**
+   * 获取未读通知（使用缓存）
+   */
+  getUnreadNotifications(): Notification[] {
+    return this.cachedNotifications
+      .filter((n) => !n.read)
+      .sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  // ==================== 本地便捷方法 ====================
+  // 这些方法用于显示临时的 UI 通知，不存储到后端
+
+  /**
+   * 创建本地通知（用于 UI 提示，不存储到后端）
    */
   addNotification(data: CreateNotificationData): Notification {
     const notification: Notification = {
-      id: this.generateId(),
+      id: `local_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
       type: data.type,
       title: data.title,
       message: data.message,
@@ -196,95 +250,16 @@ class NotificationService {
       actionLabel: data.actionLabel,
     };
 
-    // 添加到列表开头
-    this.notifications.unshift(notification);
+    // 添加到本地缓存开头
+    this.cachedNotifications.unshift(notification);
+    this.cachedUnreadCount++;
+    this.notifyListeners();
 
-    // 限制数量
-    if (this.notifications.length > MAX_NOTIFICATIONS) {
-      this.notifications = this.notifications.slice(0, MAX_NOTIFICATIONS);
-    }
-
-    this.saveNotifications();
     return notification;
   }
 
   /**
-   * 标记为已读
-   */
-  markAsRead(id: string): void {
-    const notification = this.notifications.find((n) => n.id === id);
-    if (notification && !notification.read) {
-      notification.read = true;
-      this.saveNotifications();
-    }
-  }
-
-  /**
-   * 标记全部为已读
-   */
-  markAllAsRead(): void {
-    let changed = false;
-    this.notifications.forEach((n) => {
-      if (!n.read) {
-        n.read = true;
-        changed = true;
-      }
-    });
-    if (changed) {
-      this.saveNotifications();
-    }
-  }
-
-  /**
-   * 删除通知
-   */
-  deleteNotification(id: string): void {
-    const index = this.notifications.findIndex((n) => n.id === id);
-    if (index !== -1) {
-      this.notifications.splice(index, 1);
-      this.saveNotifications();
-    }
-  }
-
-  /**
-   * 清空所有通知
-   */
-  clearAll(): void {
-    this.notifications = [];
-    this.saveNotifications();
-  }
-
-  /**
-   * 删除已读通知
-   */
-  clearRead(): void {
-    const beforeCount = this.notifications.length;
-    this.notifications = this.notifications.filter((n) => !n.read);
-    if (this.notifications.length !== beforeCount) {
-      this.saveNotifications();
-    }
-  }
-
-  /**
-   * 获取所有通知（按时间排序）
-   */
-  getAllNotifications(): Notification[] {
-    return [...this.notifications].sort((a, b) => b.createdAt - a.createdAt);
-  }
-
-  /**
-   * 获取未读通知
-   */
-  getUnreadNotifications(): Notification[] {
-    return this.notifications
-      .filter((n) => !n.read)
-      .sort((a, b) => b.createdAt - a.createdAt);
-  }
-
-  // ==================== 便捷方法 ====================
-
-  /**
-   * 成功通知
+   * 成功通知（本地）
    */
   success(title: string, message: string, actionUrl?: string, actionLabel?: string): Notification {
     return this.addNotification({
@@ -297,7 +272,7 @@ class NotificationService {
   }
 
   /**
-   * 错误通知
+   * 错误通知（本地）
    */
   error(title: string, message: string, actionUrl?: string, actionLabel?: string): Notification {
     return this.addNotification({
@@ -310,7 +285,7 @@ class NotificationService {
   }
 
   /**
-   * 警告通知
+   * 警告通知（本地）
    */
   warning(title: string, message: string, actionUrl?: string, actionLabel?: string): Notification {
     return this.addNotification({
@@ -323,7 +298,7 @@ class NotificationService {
   }
 
   /**
-   * 信息通知
+   * 信息通知（本地）
    */
   info(title: string, message: string, actionUrl?: string, actionLabel?: string): Notification {
     return this.addNotification({
@@ -333,6 +308,15 @@ class NotificationService {
       actionUrl,
       actionLabel,
     });
+  }
+
+  /**
+   * 销毁服务实例（兼容性保留）
+   */
+  public destroy(): void {
+    this.listeners.clear();
+    this.cachedNotifications = [];
+    this.cachedUnreadCount = 0;
   }
 }
 

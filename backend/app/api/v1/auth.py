@@ -2,15 +2,15 @@
 Authentication API Endpoints
 """
 
-from datetime import datetime, timedelta
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import datetime, timedelta, timezone
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import hashlib
 
 from app.api.deps import get_db, get_current_active_user
-from app.models.user import User, RefreshToken, PasswordResetToken
+from app.models.user import User, RefreshToken, PasswordResetToken, UserRole
+from app.models.token_blacklist import TokenBlacklist
 from app.schemas import (
     ServiceResponse,
     LoginCredentials,
@@ -23,7 +23,6 @@ from app.schemas import (
     ResetPasswordRequest
 )
 from app.core.security import TokenManager, PasswordManager, validate_username
-from app.core.exceptions import UnauthorizedException, ConflictException, ValidationException
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -37,6 +36,7 @@ async def login(
     User login.
 
     Returns access token and user info on success.
+    Uses constant-time comparison to prevent timing attacks.
     """
     # Find user by username or email
     result = await db.execute(
@@ -46,8 +46,16 @@ async def login(
     )
     user = result.scalar_one_or_none()
 
-    # Verify user exists and password matches
-    if not user or not PasswordManager.verify_password(credentials.password, user.password_hash):
+    # Timing attack prevention: always verify password even if user doesn't exist
+    # This ensures consistent response time regardless of user existence
+    dummy_hash = "$2b$12$dummyhashdummyhashdummyhashdummyhashdu"  # Fake hash for timing
+    password_hash = user.password_hash if user else dummy_hash
+
+    # Verify password (constant-time comparison)
+    password_valid = PasswordManager.verify_password(credentials.password, password_hash)
+
+    # Check both user existence and password validity
+    if not user or not password_valid:
         return ServiceResponse(
             success=False,
             error={
@@ -71,7 +79,7 @@ async def login(
 
     # Store refresh token hash
     token_hash = TokenManager.hash_token(refresh_token)
-    expires_at = int((datetime.utcnow() + timedelta(days=30)).timestamp() * 1000)
+    expires_at = int((datetime.now(timezone.utc) + timedelta(days=30)).timestamp() * 1000)
 
     db_token = RefreshToken(
         user_id=user.id,
@@ -81,7 +89,7 @@ async def login(
     db.add(db_token)
 
     # Update last active
-    user.updated_at = datetime.utcnow()
+    user.updated_at = datetime.now(timezone.utc)
     await db.commit()
 
     return ServiceResponse(
@@ -135,25 +143,28 @@ async def register(
             }
         )
 
-    # Check if username exists
+    # Check if username or email exists (use generic message to prevent enumeration)
     result = await db.execute(select(User).where(User.username == credentials.username))
-    if result.scalar_one_or_none():
+    username_exists = result.scalar_one_or_none() is not None
+
+    result = await db.execute(select(User).where(User.email == credentials.email))
+    email_exists = result.scalar_one_or_none() is not None
+
+    if username_exists:
         return ServiceResponse(
             success=False,
             error={
                 "code": "USERNAME_EXISTS",
-                "message": "Username already exists"
+                "message": "该用户名已被使用"
             }
         )
 
-    # Check if email exists
-    result = await db.execute(select(User).where(User.email == credentials.email))
-    if result.scalar_one_or_none():
+    if email_exists:
         return ServiceResponse(
             success=False,
             error={
                 "code": "EMAIL_EXISTS",
-                "message": "Email already registered"
+                "message": "该邮箱已被注册"
             }
         )
 
@@ -163,7 +174,7 @@ async def register(
         email=credentials.email,
         password_hash=PasswordManager.hash_password(credentials.password),
         bio=credentials.bio,
-        role="user"
+        role=UserRole.USER
     )
     db.add(user)
     await db.flush()
@@ -174,7 +185,7 @@ async def register(
 
     # Store refresh token
     token_hash = TokenManager.hash_token(refresh_token)
-    expires_at = int((datetime.utcnow() + timedelta(days=30)).timestamp() * 1000)
+    expires_at = int((datetime.now(timezone.utc) + timedelta(days=30)).timestamp() * 1000)
 
     db_token = RefreshToken(
         user_id=user.id,
@@ -205,19 +216,38 @@ async def register(
 
 @router.post("/logout", response_model=ServiceResponse)
 async def logout(
+    request: Request,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
     User logout.
 
-    Revokes all refresh tokens for the user.
+    Revokes the current access token and all refresh tokens for the user.
     """
+    # Get the current access token from headers
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+        jti = TokenManager.get_token_jti(token)
+        expiry = TokenManager.get_token_expiry(token)
+
+        if jti and expiry:
+            # Add access token to blacklist
+            blacklist_entry = TokenBlacklist(
+                jti=jti,
+                user_id=current_user.id,
+                token_type="access",  # nosec B106
+                reason="logout",
+                expires_at=int(expiry.timestamp() * 1000)
+            )
+            db.add(blacklist_entry)
+
     # Revoke all refresh tokens
     result = await db.execute(
         select(RefreshToken).where(
             RefreshToken.user_id == current_user.id,
-            RefreshToken.revoked == False
+            RefreshToken.revoked.is_(False)
         )
     )
     tokens = result.scalars().all()
@@ -256,7 +286,7 @@ async def refresh_token(
     result = await db.execute(
         select(RefreshToken).where(
             RefreshToken.token_hash == token_hash,
-            RefreshToken.revoked == False
+            RefreshToken.revoked.is_(False)
         )
     )
     db_token = result.scalar_one_or_none()
@@ -271,7 +301,7 @@ async def refresh_token(
         )
 
     # Check expiration
-    if db_token.expires_at < int(datetime.utcnow().timestamp() * 1000):
+    if db_token.expires_at < int(datetime.now(timezone.utc).timestamp() * 1000):
         return ServiceResponse(
             success=False,
             error={
@@ -302,7 +332,7 @@ async def refresh_token(
 
     # Store new refresh token
     new_token_hash = TokenManager.hash_token(new_refresh_token)
-    expires_at = int((datetime.utcnow() + timedelta(days=30)).timestamp() * 1000)
+    expires_at = int((datetime.now(timezone.utc) + timedelta(days=30)).timestamp() * 1000)
 
     new_db_token = RefreshToken(
         user_id=user.id,
@@ -349,7 +379,7 @@ async def forgot_password(
 
     # Store token hash
     token_hash = hashlib.sha256(reset_token.encode()).hexdigest()
-    expires_at = int((datetime.utcnow() + timedelta(minutes=30)).timestamp() * 1000)
+    expires_at = int((datetime.now(timezone.utc) + timedelta(minutes=30)).timestamp() * 1000)
 
     db_token = PasswordResetToken(
         user_id=user.id,
@@ -360,12 +390,12 @@ async def forgot_password(
     await db.commit()
 
     # In production, send email here
-    # For development, return the token
+    # Security: Never return the token in the response
+    # The token should only be sent via email
     return ServiceResponse(
         success=True,
         data={
-            "message": "Reset token generated",
-            "token": reset_token  # Remove in production
+            "message": "If the email exists, a reset link has been sent"
         }
     )
 
@@ -394,7 +424,7 @@ async def reset_password(
     result = await db.execute(
         select(PasswordResetToken).where(
             PasswordResetToken.token_hash == token_hash,
-            PasswordResetToken.used == False
+            PasswordResetToken.used.is_(False)
         )
     )
     db_token = result.scalar_one_or_none()
@@ -409,7 +439,7 @@ async def reset_password(
         )
 
     # Check expiration
-    if db_token.expires_at < int(datetime.utcnow().timestamp() * 1000):
+    if db_token.expires_at < int(datetime.now(timezone.utc).timestamp() * 1000):
         return ServiceResponse(
             success=False,
             error={

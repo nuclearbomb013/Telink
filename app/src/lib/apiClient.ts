@@ -84,9 +84,9 @@ class ApiClient {
   ): Promise<ServiceResponse<T>> {
     const url = `${this.baseUrl}${endpoint}`;
 
-    const headers: HeadersInit = {
+    const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      ...options.headers,
+      ...options.headers as Record<string, string>,
     };
 
     if (this.accessToken) {
@@ -236,7 +236,10 @@ export const authApi = {
 
 // ==================== 用户 API ====================
 
-export interface UserPublic {
+/**
+ * 后端返回的用户数据（snake_case）
+ */
+export interface UserPublicRaw {
   id: number;
   username: string;
   avatar?: string;
@@ -244,10 +247,55 @@ export interface UserPublic {
   role: string;
   post_count: number;
   comment_count: number;
+  like_count: number;
   created_at: number;
 }
 
+/**
+ * 前端使用的用户数据（camelCase）
+ */
+export interface UserPublic {
+  id: number;
+  username: string;
+  avatar?: string;
+  bio?: string;
+  role: string;
+  postCount: number;
+  commentCount: number;
+  likeCount: number;
+  joinedAt: number;
+  lastActiveAt?: number;
+}
+
+/**
+ * 将后端 snake_case 用户数据转换为前端 camelCase
+ */
+function transformUserPublic(raw: UserPublicRaw): UserPublic {
+  return {
+    id: raw.id,
+    username: raw.username,
+    avatar: raw.avatar,
+    bio: raw.bio,
+    role: raw.role,
+    postCount: raw.post_count,
+    commentCount: raw.comment_count,
+    likeCount: raw.like_count,
+    joinedAt: raw.created_at,
+  };
+}
+
 export interface UserStats {
+  postCount: number;
+  commentCount: number;
+  likeCount: number;
+  followingCount: number;
+  followerCount: number;
+}
+
+/**
+ * 后端返回的用户统计数据（snake_case）
+ */
+interface UserStatsRaw {
   post_count: number;
   comment_count: number;
   like_count: number;
@@ -255,18 +303,57 @@ export interface UserStats {
   follower_count: number;
 }
 
+/**
+ * 将后端 snake_case 用户统计数据转换为前端 camelCase
+ */
+function transformUserStats(raw: UserStatsRaw): UserStats {
+  return {
+    postCount: raw.post_count,
+    commentCount: raw.comment_count,
+    likeCount: raw.like_count,
+    followingCount: raw.following_count,
+    followerCount: raw.follower_count,
+  };
+}
+
 export const userApi = {
-  getById: (userId: number) =>
-    apiClient.get<UserPublic>(`/users/${userId}`),
+  getById: async (userId: number): Promise<ServiceResponse<UserPublic>> => {
+    const response = await apiClient.get<UserPublicRaw>(`/users/${userId}`);
+    if (response.success && response.data) {
+      return { ...response, data: transformUserPublic(response.data) };
+    }
+    return response as ServiceResponse<UserPublic>;
+  },
 
-  getByUsername: (username: string) =>
-    apiClient.get<UserPublic>(`/users/username/${encodeURIComponent(username)}`),
+  getByUsername: async (username: string): Promise<ServiceResponse<UserPublic>> => {
+    const response = await apiClient.get<UserPublicRaw>(`/users/username/${encodeURIComponent(username)}`);
+    if (response.success && response.data) {
+      return { ...response, data: transformUserPublic(response.data) };
+    }
+    return response as ServiceResponse<UserPublic>;
+  },
 
-  update: (userId: number, data: Partial<UserPublic>) =>
-    apiClient.put<UserPublic>(`/users/${userId}`, data),
+  update: async (userId: number, data: Partial<UserPublic>): Promise<ServiceResponse<UserPublic>> => {
+    // Convert camelCase to snake_case for backend
+    const backendData: Record<string, unknown> = {};
+    if (data.username !== undefined) backendData.username = data.username;
+    if (data.avatar !== undefined) backendData.avatar = data.avatar;
+    if (data.bio !== undefined) backendData.bio = data.bio;
 
-  getStats: (userId: number) =>
-    apiClient.get<UserStats>(`/users/${userId}/stats`),
+    const response = await apiClient.put<UserPublicRaw>(`/users/${userId}`, backendData);
+    if (response.success && response.data) {
+      return { ...response, data: transformUserPublic(response.data) };
+    }
+    return response as ServiceResponse<UserPublic>;
+  },
+
+  getStats: async (userId: number): Promise<ServiceResponse<UserStats>> => {
+    const response = await apiClient.get<UserStatsRaw>(`/users/${userId}/stats`);
+    if (response.success && response.data) {
+      return { ...response, data: transformUserStats(response.data) };
+    }
+    return response as ServiceResponse<UserStats>;
+  },
 };
 
 // ==================== 论坛 API ====================
@@ -280,7 +367,10 @@ export interface PostListParams {
   tags?: string;
 }
 
-export interface Post {
+/**
+ * 后端返回的帖子数据（snake_case）
+ */
+interface PostRaw {
   id: number;
   title: string;
   slug: string;
@@ -303,12 +393,90 @@ export interface Post {
   updated_at?: number;
 }
 
+/**
+ * 前端使用的帖子数据（camelCase）
+ */
+export interface Post {
+  id: number;
+  title: string;
+  slug: string;
+  content: string;
+  excerpt?: string;
+  coverImage?: string;
+  authorId: number;
+  authorName: string;
+  authorAvatar?: string;
+  category: string;
+  tags: string[];
+  views: number;
+  likes: number;
+  replyCount: number;
+  isPinned: boolean;
+  isLocked?: boolean;
+  isFeatured?: boolean;
+  isSolved?: boolean;
+  createdAt: number;
+  updatedAt?: number;
+}
+
+/**
+ * 将后端 snake_case 帖子数据转换为前端 camelCase
+ */
+function transformPost(raw: PostRaw): Post {
+  return {
+    id: raw.id,
+    title: raw.title,
+    slug: raw.slug,
+    content: raw.content,
+    excerpt: raw.excerpt,
+    coverImage: raw.cover_image,
+    authorId: raw.author_id,
+    authorName: raw.author_name,
+    authorAvatar: raw.author_avatar,
+    category: raw.category,
+    tags: raw.tags,
+    views: raw.views,
+    likes: raw.likes,
+    replyCount: raw.reply_count,
+    isPinned: raw.is_pinned,
+    isLocked: raw.is_locked,
+    isFeatured: raw.is_featured,
+    isSolved: raw.is_solved,
+    createdAt: raw.created_at,
+    updatedAt: raw.updated_at,
+  };
+}
+
 export interface PostListResult {
   posts: Post[];
   total: number;
   page: number;
   limit: number;
+  totalPages: number;
+}
+
+/**
+ * 后端返回的帖子列表结果（snake_case）
+ */
+interface PostListResultRaw {
+  posts: PostRaw[];
+  total: number;
+  page: number;
+  limit: number;
   total_pages: number;
+}
+
+/**
+ * 将后端 snake_case 帖子列表结果转换为前端 camelCase
+ */
+function transformPostListResult(raw: PostListResultRaw): PostListResult {
+  return {
+    posts: raw.posts.map(transformPost),
+    total: raw.total,
+    page: raw.page,
+    limit: raw.limit,
+    totalPages: raw.total_pages,
+  };
 }
 
 export interface CreatePostData {
@@ -316,25 +484,68 @@ export interface CreatePostData {
   content: string;
   category: string;
   tags?: string[];
-  cover_image?: string;
+  coverImage?: string;
   excerpt?: string;
 }
 
 export const forumApi = {
-  getPosts: (params?: PostListParams) =>
-    apiClient.get<PostListResult>('/forum/posts', params as Record<string, string | number>),
+  getPosts: async (params?: PostListParams): Promise<ServiceResponse<PostListResult>> => {
+    const response = await apiClient.get<PostListResultRaw>('/forum/posts', params as Record<string, string | number>);
+    if (response.success && response.data) {
+      return { ...response, data: transformPostListResult(response.data) };
+    }
+    return response as ServiceResponse<PostListResult>;
+  },
 
-  getPostById: (postId: number) =>
-    apiClient.get<Post>(`/forum/posts/${postId}`),
+  getPostById: async (postId: number): Promise<ServiceResponse<Post>> => {
+    const response = await apiClient.get<PostRaw>(`/forum/posts/${postId}`);
+    if (response.success && response.data) {
+      return { ...response, data: transformPost(response.data) };
+    }
+    return response as ServiceResponse<Post>;
+  },
 
-  getPostBySlug: (slug: string) =>
-    apiClient.get<Post>(`/forum/posts/slug/${slug}`),
+  getPostBySlug: async (slug: string): Promise<ServiceResponse<Post>> => {
+    const response = await apiClient.get<PostRaw>(`/forum/posts/slug/${slug}`);
+    if (response.success && response.data) {
+      return { ...response, data: transformPost(response.data) };
+    }
+    return response as ServiceResponse<Post>;
+  },
 
-  createPost: (data: CreatePostData) =>
-    apiClient.post<Post>('/forum/posts', data),
+  createPost: async (data: CreatePostData): Promise<ServiceResponse<Post>> => {
+    // Convert camelCase to snake_case for backend
+    const backendData = {
+      title: data.title,
+      content: data.content,
+      category: data.category,
+      tags: data.tags,
+      cover_image: data.coverImage,
+      excerpt: data.excerpt,
+    };
+    const response = await apiClient.post<PostRaw>('/forum/posts', backendData);
+    if (response.success && response.data) {
+      return { ...response, data: transformPost(response.data) };
+    }
+    return response as ServiceResponse<Post>;
+  },
 
-  updatePost: (postId: number, data: Partial<CreatePostData>) =>
-    apiClient.put<Post>(`/forum/posts/${postId}`, data),
+  updatePost: async (postId: number, data: Partial<CreatePostData>): Promise<ServiceResponse<Post>> => {
+    // Convert camelCase to snake_case for backend
+    const backendData: Record<string, unknown> = {};
+    if (data.title !== undefined) backendData.title = data.title;
+    if (data.content !== undefined) backendData.content = data.content;
+    if (data.category !== undefined) backendData.category = data.category;
+    if (data.tags !== undefined) backendData.tags = data.tags;
+    if (data.coverImage !== undefined) backendData.cover_image = data.coverImage;
+    if (data.excerpt !== undefined) backendData.excerpt = data.excerpt;
+
+    const response = await apiClient.put<PostRaw>(`/forum/posts/${postId}`, backendData);
+    if (response.success && response.data) {
+      return { ...response, data: transformPost(response.data) };
+    }
+    return response as ServiceResponse<Post>;
+  },
 
   deletePost: (postId: number) =>
     apiClient.delete(`/forum/posts/${postId}`),
@@ -343,23 +554,26 @@ export const forumApi = {
     apiClient.post<{ liked: boolean; likes: number }>(`/forum/posts/${postId}/like`),
 
   togglePin: (postId: number) =>
-    apiClient.post<{ is_pinned: boolean }>(`/forum/posts/${postId}/pin`),
+    apiClient.post<{ isPinned: boolean }>(`/forum/posts/${postId}/pin`),
 
   toggleLock: (postId: number) =>
-    apiClient.post<{ is_locked: boolean }>(`/forum/posts/${postId}/lock`),
+    apiClient.post<{ isLocked: boolean }>(`/forum/posts/${postId}/lock`),
 
   getStats: () =>
     apiClient.get<{
-      total_posts: number;
-      total_replies: number;
-      total_users: number;
-      posts_by_category: Record<string, number>;
+      totalPosts: number;
+      totalReplies: number;
+      totalUsers: number;
+      postsByCategory: Record<string, number>;
     }>('/forum/stats'),
 };
 
 // ==================== 评论 API ====================
 
-export interface Comment {
+/**
+ * 后端返回的评论数据（snake_case）
+ */
+interface CommentRaw {
   id: number;
   post_id: number;
   author_id: number;
@@ -372,7 +586,47 @@ export interface Comment {
   reply_to_name?: string;
   created_at: number;
   updated_at?: number;
+  replies?: CommentRaw[];
+}
+
+/**
+ * 前端使用的评论数据（camelCase）
+ */
+export interface Comment {
+  id: number;
+  postId: number;
+  authorId: number;
+  authorName: string;
+  authorAvatar?: string;
+  content: string;
+  likes: number;
+  parentId?: number;
+  replyToId?: number;
+  replyToName?: string;
+  createdAt: number;
+  updatedAt?: number;
   replies?: Comment[];
+}
+
+/**
+ * 将后端 snake_case 评论数据转换为前端 camelCase
+ */
+function transformComment(raw: CommentRaw): Comment {
+  return {
+    id: raw.id,
+    postId: raw.post_id,
+    authorId: raw.author_id,
+    authorName: raw.author_name,
+    authorAvatar: raw.author_avatar,
+    content: raw.content,
+    likes: raw.likes,
+    parentId: raw.parent_id,
+    replyToId: raw.reply_to_id,
+    replyToName: raw.reply_to_name,
+    createdAt: raw.created_at,
+    updatedAt: raw.updated_at,
+    replies: raw.replies?.map(transformComment),
+  };
 }
 
 export interface CommentListResult {
@@ -380,26 +634,68 @@ export interface CommentListResult {
   total: number;
   page: number;
   limit: number;
+  totalPages: number;
+}
+
+/**
+ * 后端返回的评论列表结果（snake_case）
+ */
+interface CommentListResultRaw {
+  comments: CommentRaw[];
+  total: number;
+  page: number;
+  limit: number;
   total_pages: number;
 }
 
 export interface CreateCommentData {
-  post_id: number;
+  postId: number;
   content: string;
-  parent_id?: number;
-  reply_to_id?: number;
-  reply_to_name?: string;
+  parentId?: number;
+  replyToId?: number;
+  replyToName?: string;
 }
 
 export const commentApi = {
-  getComments: (postId: number, params?: { page?: number; limit?: number; sortBy?: string }) =>
-    apiClient.get<CommentListResult>('/comments', { postId, ...params } as Record<string, string | number>),
+  getComments: async (postId: number, params?: { page?: number; limit?: number; sortBy?: string }): Promise<ServiceResponse<CommentListResult>> => {
+    const response = await apiClient.get<CommentListResultRaw>('/comments', { postId, ...params } as Record<string, string | number>);
+    if (response.success && response.data) {
+      return {
+        ...response,
+        data: {
+          comments: response.data.comments.map(transformComment),
+          total: response.data.total,
+          page: response.data.page,
+          limit: response.data.limit,
+          totalPages: response.data.total_pages,
+        },
+      };
+    }
+    return response as ServiceResponse<CommentListResult>;
+  },
 
-  createComment: (data: CreateCommentData) =>
-    apiClient.post<Comment>('/comments', data),
+  createComment: async (data: CreateCommentData): Promise<ServiceResponse<Comment>> => {
+    const backendData = {
+      post_id: data.postId,
+      content: data.content,
+      parent_id: data.parentId,
+      reply_to_id: data.replyToId,
+      reply_to_name: data.replyToName,
+    };
+    const response = await apiClient.post<CommentRaw>('/comments', backendData);
+    if (response.success && response.data) {
+      return { ...response, data: transformComment(response.data) };
+    }
+    return response as ServiceResponse<Comment>;
+  },
 
-  updateComment: (commentId: number, content: string) =>
-    apiClient.put<Comment>(`/comments/${commentId}`, { content }),
+  updateComment: async (commentId: number, content: string): Promise<ServiceResponse<Comment>> => {
+    const response = await apiClient.put<CommentRaw>(`/comments/${commentId}`, { content });
+    if (response.success && response.data) {
+      return { ...response, data: transformComment(response.data) };
+    }
+    return response as ServiceResponse<Comment>;
+  },
 
   deleteComment: (commentId: number) =>
     apiClient.delete(`/comments/${commentId}`),
@@ -410,7 +706,10 @@ export const commentApi = {
 
 // ==================== 通知 API ====================
 
-export interface Notification {
+/**
+ * 后端返回的通知数据（snake_case）
+ */
+interface NotificationRaw {
   id: number;
   user_id: number;
   type: 'info' | 'success' | 'warning' | 'error';
@@ -421,15 +720,66 @@ export interface Notification {
   created_at: number;
 }
 
+/**
+ * 前端使用的通知数据（camelCase）
+ */
+export interface Notification {
+  id: number;
+  userId: number;
+  type: 'info' | 'success' | 'warning' | 'error';
+  title: string;
+  message: string;
+  link?: string;
+  isRead: boolean;
+  createdAt: number;
+}
+
+/**
+ * 将后端 snake_case 通知数据转换为前端 camelCase
+ */
+function transformNotification(raw: NotificationRaw): Notification {
+  return {
+    id: raw.id,
+    userId: raw.user_id,
+    type: raw.type,
+    title: raw.title,
+    message: raw.message,
+    link: raw.link,
+    isRead: raw.is_read,
+    createdAt: raw.created_at,
+  };
+}
+
 export interface NotificationListResult {
   notifications: Notification[];
+  total: number;
+  unreadCount: number;
+}
+
+/**
+ * 后端返回的通知列表结果（snake_case）
+ */
+interface NotificationListResultRaw {
+  notifications: NotificationRaw[];
   total: number;
   unread_count: number;
 }
 
 export const notificationApi = {
-  getNotifications: (params?: { page?: number; limit?: number; unreadOnly?: boolean }) =>
-    apiClient.get<NotificationListResult>('/notifications', params as Record<string, string | number>),
+  getNotifications: async (params?: { page?: number; limit?: number; unreadOnly?: boolean }): Promise<ServiceResponse<NotificationListResult>> => {
+    const response = await apiClient.get<NotificationListResultRaw>('/notifications', params as Record<string, string | number>);
+    if (response.success && response.data) {
+      return {
+        ...response,
+        data: {
+          notifications: response.data.notifications.map(transformNotification),
+          total: response.data.total,
+          unreadCount: response.data.unread_count,
+        },
+      };
+    }
+    return response as ServiceResponse<NotificationListResult>;
+  },
 
   markAsRead: (notificationId: number) =>
     apiClient.put(`/notifications/${notificationId}/read`),

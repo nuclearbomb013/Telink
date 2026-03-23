@@ -2,7 +2,7 @@
 Comment Model
 """
 
-from sqlalchemy import Column, String, Text, Integer, ForeignKey
+from sqlalchemy import Column, String, Text, Integer, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from app.models.base import BaseModel
@@ -27,7 +27,16 @@ class Comment(BaseModel):
     # Relationships
     post = relationship("Post", back_populates="comments")
     author = relationship("User", back_populates="comments")
-    replies = relationship("Comment", backref="parent", remote_side="Comment.id")
+    replies = relationship(
+        "Comment",
+        backref="parent",
+        remote_side="Comment.id",
+        foreign_keys=[parent_id],
+    )
+    reply_to = relationship(
+        "Comment",
+        foreign_keys=[reply_to_id],
+    )
     comment_likes = relationship("CommentLike", back_populates="comment", cascade="all, delete-orphan")
 
     def to_dict(self) -> dict:
@@ -47,6 +56,11 @@ class CommentLike(BaseModel):
 
     comment_id = Column(Integer, ForeignKey("comments.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # Unique constraint: one like per user per comment
+    __table_args__ = (
+        UniqueConstraint('user_id', 'comment_id', name='uq_comment_likes_user_comment'),
+    )
 
     # Relationships
     comment = relationship("Comment", back_populates="comment_likes")

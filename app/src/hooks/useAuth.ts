@@ -70,10 +70,12 @@ export function useAuth(): UseAuthReturn {
 
   /**
    * 初始化时加载用户
+   * 这是有效的初始化模式，在组件挂载时同步认证状态
    */
   useEffect(() => {
     // 初始加载
     const user = authService.getCurrentUser();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setState({
       user,
       isAuthenticated: authService.isAuthenticated(),
@@ -85,6 +87,7 @@ export function useAuth(): UseAuthReturn {
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'techink_current_user' || e.key === 'techink_auth_token') {
         const currentUser = authService.getCurrentUser();
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setState((prev) => ({
           ...prev,
           user: currentUser,

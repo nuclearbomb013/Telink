@@ -3,7 +3,7 @@ Notification Schemas
 """
 
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class NotificationType:
@@ -35,13 +35,12 @@ class NotificationCreate(NotificationBase):
 class NotificationResponse(NotificationBase):
     """Notification response schema."""
 
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     user_id: int
     is_read: bool = False
     created_at: int  # Unix timestamp in milliseconds
-
-    class Config:
-        from_attributes = True
 
 
 class NotificationListResult(BaseModel):

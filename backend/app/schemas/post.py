@@ -3,7 +3,7 @@ Post Schemas
 """
 
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class PostCategory:
@@ -48,6 +48,8 @@ class PostUpdate(BaseModel):
 class PostResponse(BaseModel):
     """Post response schema."""
 
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     title: str
     slug: str
@@ -69,12 +71,11 @@ class PostResponse(BaseModel):
     created_at: int  # Unix timestamp in milliseconds
     updated_at: Optional[int] = None
 
-    class Config:
-        from_attributes = True
-
 
 class PostListResponse(BaseModel):
     """Post list item (simplified)."""
+
+    model_config = ConfigDict(from_attributes=True)
 
     id: int
     title: str
@@ -91,9 +92,6 @@ class PostListResponse(BaseModel):
     reply_count: int = 0
     is_pinned: bool = False
     created_at: int
-
-    class Config:
-        from_attributes = True
 
 
 class PostListResult(BaseModel):

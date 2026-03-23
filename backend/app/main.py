@@ -14,6 +14,7 @@ from app.config import settings
 from app.db.session import init_db, close_db
 from app.api.v1.router import api_router
 from app.core.logging import setup_logging, get_logger
+from app.core.rate_limit import RateLimitMiddleware
 
 # Initialize logging
 setup_logging()
@@ -49,6 +50,12 @@ def create_app() -> FastAPI:
     )
 
     # Configure CORS
+    logger.info(
+        "cors_config",
+        origins=settings.cors_origins_list,
+        methods=settings.cors_methods_list,
+        headers=settings.cors_headers_list,
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins_list,
@@ -56,6 +63,10 @@ def create_app() -> FastAPI:
         allow_methods=settings.cors_methods_list,
         allow_headers=settings.cors_headers_list,
     )
+
+    # Add rate limiting middleware (must be after CORS for proper handling)
+    app.add_middleware(RateLimitMiddleware)
+    logger.info("rate_limit_middleware_enabled")
 
     # Global exception handlers
     @app.exception_handler(HTTPException)
@@ -127,6 +138,16 @@ def create_app() -> FastAPI:
     # Request logging middleware
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
+        # OPTIONS preflight 直接放行，并设置 CORS 头
+        if request.method == "OPTIONS":
+            from fastapi.responses import Response
+            response = Response(status_code=200)
+            response.headers["Access-Control-Allow-Origin"] = request.headers.get("origin", "*")
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Accept, Origin, X-Requested-With"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            return response
+
         request_id = str(uuid.uuid4())[:8]
         start_time = time.time()
 
@@ -203,7 +224,7 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
         "app.main:app",
-        host="0.0.0.0",
+        host="0.0.0.0",  # nosec B104  # Development server, bind to all interfaces
         port=8000,
         reload=settings.DEBUG
     )

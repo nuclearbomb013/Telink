@@ -9,13 +9,11 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, Calendar, MessageSquare, FileText, Heart, Award, Edit } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
+import { userApi, type UserPublic } from '@/lib/apiClient';
+import { forumApi } from '@/lib/apiClient';
 import { userService } from '@/services/user.service';
-import { forumService } from '@/services/forum.service';
-import type { User } from '@/services/user.types';
-import type { ForumPost } from '@/services/forum.types';
 
 import UserAvatar from '@/components/Forum/UserAvatar';
-import ForumPostCard from '@/components/Forum/ForumPostCard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -92,8 +90,16 @@ const UserProfilePage = () => {
   const userId = userIdStr ? parseInt(userIdStr, 10) : null;
 
   // 状态
-  const [user, setUser] = useState<User | null>(null);
-  const [userPosts, setUserPosts] = useState<ForumPost[]>([]);
+  const [user, setUser] = useState<UserPublic | null>(null);
+  const [userPosts, setUserPosts] = useState<Array<{
+    id: number;
+    title: string;
+    category: string;
+    likes: number;
+    views: number;
+    replyCount: number;
+    createdAt: number;
+  }>>([]);
   const [loading, setLoading] = useState(true);
   const [isCurrentUser, setIsCurrentUser] = useState(false);
 
@@ -110,24 +116,27 @@ const UserProfilePage = () => {
       const currentUser = userService.getCurrentUser();
       setIsCurrentUser(currentUser?.id === userId);
 
-      // 加载用户信息
-      const userResponse = await userService.getUserById(userId);
+      // 加载用户信息（使用真实后端 API）
+      const userResponse = await userApi.getById(userId);
       if (userResponse.success && userResponse.data) {
         setUser(userResponse.data);
-      }
 
-      // 加载用户统计
-      const statsResponse = await userService.getUserStats(userId);
-      if (statsResponse.success && statsResponse.data) {
-        // 加载用户帖子详情
-        const postPromises = statsResponse.data.posts.map((p) =>
-          forumService.getPostById(p.id)
-        );
-        const postResponses = await Promise.all(postPromises);
-        const posts = postResponses
-          .filter((r) => r.success && r.data)
-          .map((r) => r.data as ForumPost);
-        setUserPosts(posts);
+        // 加载用户帖子
+        const postsResponse = await forumApi.getPosts({ limit: 50 });
+        if (postsResponse.success && postsResponse.data) {
+          const userPostsData = postsResponse.data.posts
+            .filter(p => p.author_id === userId)
+            .map(p => ({
+              id: p.id,
+              title: p.title,
+              category: p.category,
+              likes: p.likes,
+              views: p.views,
+              replyCount: p.reply_count,
+              createdAt: p.created_at,
+            }));
+          setUserPosts(userPostsData);
+        }
       }
 
       setLoading(false);
@@ -301,7 +310,19 @@ const UserProfilePage = () => {
             ) : (
               <div className="space-y-4">
                 {userPosts.map((post) => (
-                  <ForumPostCard key={post.id} post={post} showAvatar={false} />
+                  <Link key={post.id} to={`/forum/post/${post.id}`}>
+                    <Card className="hover:shadow-md transition-shadow cursor-pointer">
+                      <CardContent className="p-4">
+                        <h3 className="font-oswald text-lg text-brand-text mb-2">{post.title}</h3>
+                        <div className="flex items-center gap-4 text-sm text-brand-dark-gray/60">
+                          <span className="px-2 py-0.5 bg-brand-linen rounded text-xs">{post.category}</span>
+                          <span>{post.likes} 赞</span>
+                          <span>{post.views} 浏览</span>
+                          <span>{post.replyCount} 评论</span>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </Link>
                 ))}
               </div>
             )}

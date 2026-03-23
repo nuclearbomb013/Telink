@@ -61,23 +61,8 @@ const ForumEditPage = () => {
   const [imageUrl, setImageUrl] = useState('');
 
   /**
-   * 检查登录状态并加载帖子数据
-   */
-  useEffect(() => {
-    const user = userService.getCurrentUser();
-    if (!user) {
-      // 未登录，重定向到登录页
-      navigate('/login', { state: { from: { pathname: `/forum/edit/${id}` } } });
-      return;
-    }
-    setCurrentUser(user);
-
-    // 加载帖子数据
-    loadPost(parseInt(id || '0', 10));
-  }, [id, navigate]);
-
-  /**
    * 加载帖子数据
+   * 包含多个 setState 调用用于同步加载的帖子数据
    */
   const loadPost = async (postId: number) => {
     if (!postId) return;
@@ -96,6 +81,7 @@ const ForumEditPage = () => {
         return;
       }
 
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPost(postData);
       setTitle(postData.title);
       setCategory(postData.category);
@@ -119,6 +105,23 @@ const ForumEditPage = () => {
 
     setLoading(false);
   };
+
+  /**
+   * 检查登录状态并加载帖子数据
+   */
+  useEffect(() => {
+    const user = userService.getCurrentUser();
+    if (!user) {
+      // 未登录，重定向到登录页
+      navigate('/login', { state: { from: { pathname: `/forum/edit/${id}` } } });
+      return;
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCurrentUser(user);
+
+    // 加载帖子数据
+    loadPost(parseInt(id || '0', 10));
+  }, [id, navigate]);
 
   /**
    * 验证表单

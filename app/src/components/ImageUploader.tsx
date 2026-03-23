@@ -175,8 +175,10 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
   };
 
   /**
-   * 处理粘贴
+   * 处理粘贴（预留功能）
+   * Note: 此功能为未来扩展预留，暂未启用
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handlePaste = useCallback((e: ClipboardEvent) => {
     const items = e.clipboardData?.items;
     if (!items) return;

@@ -3,7 +3,7 @@ Common Schemas
 """
 
 from typing import Generic, TypeVar, Optional, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
 
 T = TypeVar("T")
@@ -12,13 +12,12 @@ T = TypeVar("T")
 class ServiceResponse(BaseModel, Generic[T]):
     """Standard API response format matching frontend expectations."""
 
+    model_config = ConfigDict(from_attributes=True)
+
     success: bool = True
     data: Optional[T] = None
     error: Optional[dict] = None
     timestamp: int = Field(default_factory=lambda: int(datetime.now().timestamp() * 1000))
-
-    class Config:
-        from_attributes = True
 
 
 class PaginationParams(BaseModel):

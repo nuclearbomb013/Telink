@@ -3,23 +3,25 @@ Core Security Module
 Handles password hashing, JWT token generation and verification
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
-from jose import jwt, JWTError
-from passlib.context import CryptContext
+import jwt
+import bcrypt
 import hashlib
+import secrets
 
 from app.config import settings
-
-# Password hashing context
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 class TokenManager:
     """JWT Token management utilities."""
 
     ALGORITHM = settings.ALGORITHM
-    SECRET_KEY = settings.SECRET_KEY
+
+    @classmethod
+    def _get_secret_key(cls) -> str:
+        """Get the secret key from settings."""
+        return settings.secret_key
 
     @classmethod
     def create_access_token(
@@ -39,20 +41,22 @@ class TokenManager:
         Returns:
             Encoded JWT token string
         """
+        now = datetime.now(timezone.utc)
         if expires_delta:
-            expire = datetime.utcnow() + expires_delta
+            expire = now + expires_delta
         elif remember:
-            expire = datetime.utcnow() + timedelta(days=30)
+            expire = now + timedelta(days=30)
         else:
-            expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+            expire = now + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
 
         to_encode: Dict[str, Any] = {
             "exp": expire,
             "sub": str(subject),
             "type": "access",
-            "iat": datetime.utcnow()
+            "iat": now,
+            "jti": secrets.token_urlsafe(16)  # Unique token ID for revocation
         }
-        return jwt.encode(to_encode, cls.SECRET_KEY, algorithm=cls.ALGORITHM)
+        return jwt.encode(to_encode, cls._get_secret_key(), algorithm=cls.ALGORITHM)
 
     @classmethod
     def create_refresh_token(cls, subject: str) -> str:
@@ -65,17 +69,19 @@ class TokenManager:
         Returns:
             Encoded JWT refresh token string
         """
-        expire = datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+        now = datetime.now(timezone.utc)
+        expire = now + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
         to_encode: Dict[str, Any] = {
             "exp": expire,
             "sub": str(subject),
             "type": "refresh",
-            "iat": datetime.utcnow()
+            "iat": now,
+            "jti": secrets.token_urlsafe(16)  # Unique token ID for revocation
         }
-        return jwt.encode(to_encode, cls.SECRET_KEY, algorithm=cls.ALGORITHM)
+        return jwt.encode(to_encode, cls._get_secret_key(), algorithm=cls.ALGORITHM)
 
     @classmethod
-    def verify_token(cls, token: str, token_type: str = "access") -> Optional[str]:
+    def verify_token(cls, token: str, token_type: str = "access") -> Optional[str]:  # nosec B107
         """
         Verify and decode a JWT token.
 
@@ -87,23 +93,50 @@ class TokenManager:
             User ID (subject) if valid, None otherwise
         """
         try:
-            payload = jwt.decode(token, cls.SECRET_KEY, algorithms=[cls.ALGORITHM])
+            payload = jwt.decode(token, cls._get_secret_key(), algorithms=[cls.ALGORITHM])
             if payload.get("type") != token_type:
                 return None
             return payload.get("sub")
-        except JWTError:
+        except jwt.ExpiredSignatureError:
+            return None
+        except jwt.InvalidTokenError:
+            return None
+
+    @classmethod
+    def decode_token(cls, token: str) -> Optional[Dict[str, Any]]:
+        """
+        Decode a JWT token without verification (for inspection).
+
+        Args:
+            token: JWT token string
+
+        Returns:
+            Token payload if valid, None otherwise
+        """
+        try:
+            return jwt.decode(token, cls._get_secret_key(), algorithms=[cls.ALGORITHM])
+        except jwt.InvalidTokenError:
             return None
 
     @classmethod
     def get_token_expiry(cls, token: str) -> Optional[datetime]:
         """Get expiration time of a token."""
         try:
-            payload = jwt.decode(token, cls.SECRET_KEY, algorithms=[cls.ALGORITHM])
+            payload = jwt.decode(token, cls._get_secret_key(), algorithms=[cls.ALGORITHM])
             exp = payload.get("exp")
             if exp:
-                return datetime.fromtimestamp(exp)
+                return datetime.fromtimestamp(exp, tz=timezone.utc)
             return None
-        except JWTError:
+        except jwt.InvalidTokenError:
+            return None
+
+    @classmethod
+    def get_token_jti(cls, token: str) -> Optional[str]:
+        """Get the unique token ID (jti) for revocation support."""
+        try:
+            payload = jwt.decode(token, cls._get_secret_key(), algorithms=[cls.ALGORITHM])
+            return payload.get("jti")
+        except jwt.InvalidTokenError:
             return None
 
     @staticmethod
@@ -126,7 +159,11 @@ class PasswordManager:
         Returns:
             Hashed password string
         """
-        return pwd_context.hash(password)
+        # Truncate to 72 bytes for bcrypt compatibility
+        password_bytes = password.encode('utf-8')[:72]
+        salt = bcrypt.gensalt()
+        hashed = bcrypt.hashpw(password_bytes, salt)
+        return hashed.decode('utf-8')
 
     @staticmethod
     def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -140,7 +177,12 @@ class PasswordManager:
         Returns:
             True if password matches, False otherwise
         """
-        return pwd_context.verify(plain_password, hashed_password)
+        # Truncate to 72 bytes for bcrypt compatibility
+        password_bytes = plain_password.encode('utf-8')[:72]
+        try:
+            return bcrypt.checkpw(password_bytes, hashed_password.encode('utf-8'))
+        except Exception:
+            return False
 
     @staticmethod
     def validate_password_strength(password: str) -> tuple[bool, str]:

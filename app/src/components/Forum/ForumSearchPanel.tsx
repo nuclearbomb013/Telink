@@ -4,7 +4,7 @@
  * 提供全文搜索、分类筛选、标签筛选、日期范围等功能
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { Search, X, Filter, Calendar, Tag, Folder } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
@@ -161,8 +161,8 @@ const ForumSearchPanel = ({
   /**
    * 防抖搜索
    */
-  const debouncedSearch = useCallback(
-    debounce(performSearch, 300),
+  const debouncedSearch = useMemo(
+    () => debounce(performSearch, 300),
     [performSearch]
   );
 

@@ -3,7 +3,7 @@ Comment Schemas
 """
 
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class CommentBase(BaseModel):
@@ -30,6 +30,8 @@ class CommentUpdate(BaseModel):
 class CommentResponse(BaseModel):
     """Comment response schema."""
 
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     post_id: int
     author_id: int
@@ -42,9 +44,6 @@ class CommentResponse(BaseModel):
     reply_to_name: Optional[str] = None
     created_at: int  # Unix timestamp in milliseconds
     updated_at: Optional[int] = None
-
-    class Config:
-        from_attributes = True
 
 
 class CommentWithReplies(CommentResponse):

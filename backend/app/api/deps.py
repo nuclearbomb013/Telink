@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from app.db.session import async_session_maker
 from app.models.user import User
+from app.models.token_blacklist import TokenBlacklist
 from app.core.security import TokenManager
 from app.core.exceptions import UnauthorizedException, ForbiddenException
 
@@ -28,6 +29,23 @@ async def get_db() -> Generator:
             raise
 
 
+async def is_token_revoked(db: AsyncSession, jti: str) -> bool:
+    """
+    Check if a token's JTI is in the blacklist.
+
+    Args:
+        db: Database session
+        jti: JWT ID to check
+
+    Returns:
+        True if token is revoked, False otherwise
+    """
+    result = await db.execute(
+        select(TokenBlacklist).where(TokenBlacklist.jti == jti)
+    )
+    return result.scalar_one_or_none() is not None
+
+
 async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: AsyncSession = Depends(get_db)
@@ -40,10 +58,19 @@ async def get_current_user(
         return None
 
     token = credentials.credentials
+
+    # Get token JTI for blacklist check
+    jti = TokenManager.get_token_jti(token)
+
+    # Verify token
     user_id = TokenManager.verify_token(token, "access")
 
     if not user_id:
         raise UnauthorizedException("Invalid or expired token")
+
+    # Check if token is revoked
+    if jti and await is_token_revoked(db, jti):
+        raise UnauthorizedException("Token has been revoked")
 
     result = await db.execute(select(User).where(User.id == int(user_id)))
     user = result.scalar_one_or_none()

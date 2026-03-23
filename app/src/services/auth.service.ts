@@ -2,7 +2,7 @@
  * Auth Service - 用户认证服务
  *
  * 提供用户登录、注册、登出、密码重置等功能
- * 当前使用 Mock 数据，预留真实 API 接口
+ * 连接后端 FastAPI API
  */
 
 import type {
@@ -16,34 +16,26 @@ import type {
   PasswordValidation,
   PasswordStrength,
 } from './auth.types';
-import { getInitialUsers } from './mock-data';
+import {
+  apiClient,
+  authApi,
+  type AuthUser,
+  type TokenData,
+} from '@/lib/apiClient';
 
 /**
  * localStorage 键名
  */
 const STORAGE_KEYS = {
   CURRENT_USER: 'techink_current_user',
-  AUTH_TOKEN: 'techink_auth_token',
-  USERS: 'techink_auth_users', // 修改为独立的认证用户存储键
-  RESET_TOKENS: 'techink_reset_tokens',
+  REFRESH_TOKEN: 'techink_refresh_token',
 } as const;
-
-/**
- * Token 有效期（毫秒）
- * - 普通登录：7 天
- * - 记住登录：30 天
- */
-const TOKEN_EXPIRY = {
-  NORMAL: 7 * 24 * 60 * 60 * 1000,
-  REMEMBER: 30 * 24 * 60 * 60 * 1000,
-};
 
 /**
  * 认证服务类
  */
 class AuthService {
   private currentUser: CurrentUser | null = null;
-  private authToken: AuthToken | null = null;
 
   constructor() {
     this.initialize();
@@ -54,7 +46,6 @@ class AuthService {
    */
   private initialize(): void {
     this.loadCurrentUser();
-    this.loadAuthToken();
   }
 
   /**
@@ -72,28 +63,6 @@ class AuthService {
   }
 
   /**
-   * 加载认证令牌
-   */
-  private loadAuthToken(): void {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
-      if (stored) {
-        const token = JSON.parse(stored);
-        // 检查是否过期
-        if (token.expiresAt > Date.now()) {
-          this.authToken = token;
-        } else {
-          // 已过期，清除
-          this.clearAuthToken();
-        }
-      }
-    } catch (error) {
-      console.warn('加载认证令牌失败:', error);
-      this.clearAuthToken();
-    }
-  }
-
-  /**
    * 保存当前用户
    */
   private saveCurrentUser(user: CurrentUser): void {
@@ -102,51 +71,35 @@ class AuthService {
   }
 
   /**
-   * 保存认证令牌
+   * 清除当前用户
    */
-  private saveAuthToken(token: AuthToken): void {
-    localStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, JSON.stringify(token));
-    this.authToken = token;
+  private clearCurrentUser(): void {
+    localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+    localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+    this.currentUser = null;
   }
 
   /**
-   * 清除认证令牌
+   * 将 API 用户转换为本地用户格式
    */
-  private clearAuthToken(): void {
-    localStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN);
-    this.authToken = null;
-  }
-
-  /**
-   * 模拟 API 延迟
-   */
-  private async simulateDelay(ms = 300): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
-  /**
-   * 创建成功响应
-   */
-  private successResponse<T>(data: T): AuthServiceResponse<T> {
+  private mapApiUserToCurrentUser(apiUser: AuthUser): CurrentUser {
     return {
-      success: true,
-      data,
-      timestamp: Date.now(),
+      id: apiUser.id,
+      username: apiUser.username,
+      email: apiUser.email,
+      avatar: apiUser.avatar,
+      role: apiUser.role as CurrentUser['role'],
     };
   }
 
   /**
-   * 创建错误响应
+   * 将 API Token 转换为本地 Token 格式
    */
-  private errorResponse(
-    code: string,
-    message: string,
-    details?: unknown
-  ): AuthServiceResponse<never> {
+  private mapApiTokenToAuthToken(tokenData: TokenData): AuthToken {
     return {
-      success: false,
-      error: { code, message, details },
-      timestamp: Date.now(),
+      token: tokenData.accessToken,
+      refreshToken: tokenData.refreshToken,
+      expiresAt: Date.now() + tokenData.expiresIn * 1000,
     };
   }
 
@@ -223,35 +176,6 @@ class AuthService {
     return { isValid: true };
   }
 
-  /**
-   * 生成 Token
-   */
-  private generateToken(remember: boolean = false): AuthToken {
-    const expiresAt = remember
-      ? Date.now() + TOKEN_EXPIRY.REMEMBER
-      : Date.now() + TOKEN_EXPIRY.NORMAL;
-
-    return {
-      token: `token_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`,
-      refreshToken: `refresh_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`,
-      expiresAt,
-    };
-  }
-
-  /**
-   * 生成重置令牌
-   */
-  private generateResetToken(email: string): string {
-    const token = `reset_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-    const tokens = JSON.parse(localStorage.getItem(STORAGE_KEYS.RESET_TOKENS) || '{}');
-    tokens[email] = {
-      token,
-      expiresAt: Date.now() + 30 * 60 * 1000, // 30 分钟有效期
-    };
-    localStorage.setItem(STORAGE_KEYS.RESET_TOKENS, JSON.stringify(tokens));
-    return token;
-  }
-
   // ==================== 公开 API ====================
 
   /**
@@ -265,7 +189,7 @@ class AuthService {
    * 检查是否已登录
    */
   isAuthenticated(): boolean {
-    return this.currentUser !== null && this.authToken !== null;
+    return this.currentUser !== null && apiClient.getToken() !== null;
   }
 
   /**
@@ -273,65 +197,64 @@ class AuthService {
    */
   async login(credentials: LoginCredentials): Promise<AuthServiceResponse<AuthResponse>> {
     try {
-      await this.simulateDelay();
-
       // 验证输入
       const usernameValidation = this.validateUsername(credentials.username);
       if (!usernameValidation.isValid) {
-        return this.errorResponse('VALIDATION_ERROR', usernameValidation.error!);
+        return {
+          success: false,
+          error: { code: 'VALIDATION_ERROR', message: usernameValidation.error! },
+          timestamp: Date.now(),
+        };
       }
 
       if (!credentials.password) {
-        return this.errorResponse('VALIDATION_ERROR', '密码不能为空');
+        return {
+          success: false,
+          error: { code: 'VALIDATION_ERROR', message: '密码不能为空' },
+          timestamp: Date.now(),
+        };
       }
 
-      // 加载用户列表（添加错误保护）
-      let users = getInitialUsers();
-      const storedUsers = localStorage.getItem(STORAGE_KEYS.USERS);
-      if (storedUsers) {
-        try {
-          const parsed = JSON.parse(storedUsers);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            users = parsed;
-          }
-        } catch (parseError) {
-          console.warn('解析用户数据失败，使用默认 Mock 数据:', parseError);
-          users = getInitialUsers();
-        }
+      // 调用后端 API
+      const response = await authApi.login({
+        username: credentials.username,
+        password: credentials.password,
+        remember: credentials.remember,
+      });
+
+      if (!response.success || !response.data) {
+        return {
+          success: false,
+          error: response.error || { code: 'LOGIN_ERROR', message: '登录失败' },
+          timestamp: Date.now(),
+        };
       }
 
-      // 查找用户
-      const user = users.find(
-        (u: { username: string; password: string }) =>
-          u.username === credentials.username && u.password === credentials.password
-      );
+      const { user, token } = response.data;
 
-      if (!user) {
-        return this.errorResponse('INVALID_CREDENTIALS', '用户名或密码错误');
-      }
+      // 保存认证状态
+      apiClient.setToken(token.accessToken);
+      localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, token.refreshToken);
+      const currentUser = this.mapApiUserToCurrentUser(user);
+      this.saveCurrentUser(currentUser);
 
-      // 生成 token
-      const token = this.generateToken(credentials.remember);
-
-      // 构建响应
-      const authResponse: AuthResponse = {
-        user: {
-          id: user.id,
-          username: user.username,
-          email: user.email,
-          avatar: user.avatar,
-          role: user.role,
+      return {
+        success: true,
+        data: {
+          user: currentUser,
+          token: this.mapApiTokenToAuthToken(token),
         },
-        token,
+        timestamp: Date.now(),
       };
-
-      // 保存状态
-      this.saveCurrentUser(authResponse.user);
-      this.saveAuthToken(token);
-
-      return this.successResponse(authResponse);
     } catch (error) {
-      return this.errorResponse('LOGIN_ERROR', '登录失败', error);
+      return {
+        success: false,
+        error: {
+          code: 'LOGIN_ERROR',
+          message: error instanceof Error ? error.message : '登录失败',
+        },
+        timestamp: Date.now(),
+      };
     }
   }
 
@@ -340,127 +263,100 @@ class AuthService {
    */
   async register(credentials: RegisterCredentials): Promise<AuthServiceResponse<AuthResponse>> {
     try {
-      await this.simulateDelay();
-
       // 验证用户名
       const usernameValidation = this.validateUsername(credentials.username);
       if (!usernameValidation.isValid) {
-        return this.errorResponse('VALIDATION_ERROR', usernameValidation.error!);
+        return {
+          success: false,
+          error: { code: 'VALIDATION_ERROR', message: usernameValidation.error! },
+          timestamp: Date.now(),
+        };
       }
 
       // 验证邮箱
       const emailValidation = this.validateEmail(credentials.email);
       if (!emailValidation.isValid) {
-        return this.errorResponse('VALIDATION_ERROR', emailValidation.error!);
+        return {
+          success: false,
+          error: { code: 'VALIDATION_ERROR', message: emailValidation.error! },
+          timestamp: Date.now(),
+        };
       }
 
       // 验证密码
       const passwordValidation = this.validatePassword(credentials.password);
       if (!passwordValidation.isValid) {
-        return this.errorResponse(
-          'VALIDATION_ERROR',
-          `密码强度不足：${passwordValidation.errors.join('，')}`
-        );
+        return {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: `密码强度不足：${passwordValidation.errors.join('，')}`,
+          },
+          timestamp: Date.now(),
+        };
       }
 
-      // 加载用户列表（添加错误保护）
-      let users = getInitialUsers();
-      const storedUsers = localStorage.getItem(STORAGE_KEYS.USERS);
-      if (storedUsers) {
-        try {
-          const parsed = JSON.parse(storedUsers);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            users = parsed;
-          }
-        } catch (parseError) {
-          console.warn('解析用户数据失败，使用默认 Mock 数据:', parseError);
-          // 数据损坏，使用默认数据
-          users = getInitialUsers();
-        }
-      }
-
-      // 检查用户名是否已存在
-      const usernameExists = users.some(
-        (u: { username: string }) =>
-          u.username.toLowerCase() === credentials.username.toLowerCase()
-      );
-      if (usernameExists) {
-        return this.errorResponse('USERNAME_EXISTS', '用户名已存在');
-      }
-
-      // 检查邮箱是否已存在
-      const emailExists = users.some(
-        (u: { email: string }) => u.email.toLowerCase() === credentials.email.toLowerCase()
-      );
-      if (emailExists) {
-        return this.errorResponse('EMAIL_EXISTS', '邮箱已被注册');
-      }
-
-      // 生成新用户 ID（安全的方式）
-      let newId = 1;
-      if (users.length > 0) {
-        try {
-          const maxId = users.reduce((max: number, u: { id: number }) => {
-            const id = typeof u.id === 'number' ? u.id : 0;
-            return id > max ? id : max;
-          }, 0);
-          newId = maxId + 1;
-        } catch (error) {
-          console.warn('生成用户 ID 失败，使用默认 ID:', error);
-          newId = 1;
-        }
-      }
-
-      // 创建新用户
-      const newUser = {
-        id: newId,
+      // 调用后端 API
+      const response = await authApi.register({
         username: credentials.username,
         email: credentials.email,
         password: credentials.password,
-        avatar: undefined,
         bio: credentials.bio,
-        role: 'user' as const,
-      };
+      });
 
-      users.push(newUser);
-      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+      if (!response.success || !response.data) {
+        return {
+          success: false,
+          error: response.error || { code: 'REGISTER_ERROR', message: '注册失败' },
+          timestamp: Date.now(),
+        };
+      }
 
-      // 生成 token
-      const token = this.generateToken(true); // 注册后自动登录，默认记住
+      const { user, token } = response.data;
 
-      // 构建响应
-      const authResponse: AuthResponse = {
-        user: {
-          id: newUser.id,
-          username: newUser.username,
-          email: newUser.email,
-          avatar: newUser.avatar,
-          role: newUser.role,
+      // 保存认证状态
+      apiClient.setToken(token.accessToken);
+      localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, token.refreshToken);
+      const currentUser = this.mapApiUserToCurrentUser(user);
+      this.saveCurrentUser(currentUser);
+
+      return {
+        success: true,
+        data: {
+          user: currentUser,
+          token: this.mapApiTokenToAuthToken(token),
         },
-        token,
+        timestamp: Date.now(),
       };
-
-      // 保存状态
-      this.saveCurrentUser(authResponse.user);
-      this.saveAuthToken(token);
-
-      return this.successResponse(authResponse);
     } catch (error) {
-      return this.errorResponse('REGISTER_ERROR', '注册失败', error);
+      return {
+        success: false,
+        error: {
+          code: 'REGISTER_ERROR',
+          message: error instanceof Error ? error.message : '注册失败',
+        },
+        timestamp: Date.now(),
+      };
     }
   }
 
   /**
    * 登出
    */
-  logout(): void {
-    this.currentUser = null;
-    this.authToken = null;
-    localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
-    localStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN);
+  async logout(): Promise<void> {
+    try {
+      // 调用后端 API（忽略错误，确保本地状态被清理）
+      await authApi.logout();
+    } catch (error) {
+      console.warn('登出 API 调用失败:', error);
+    } finally {
+      // 清理本地状态
+      apiClient.clearToken();
+      this.clearCurrentUser();
 
-    // 触发全局登出事件 to ensure UserService and other services clear their state
-    window.dispatchEvent(new CustomEvent('auth:logout'));
+      // 触发全局登出事件
+      window.dispatchEvent(new CustomEvent('auth:logout'));
+    }
   }
 
   /**
@@ -470,46 +366,41 @@ class AuthService {
     email: string
   ): Promise<AuthServiceResponse<{ resetToken: string }>> {
     try {
-      await this.simulateDelay();
-
       // 验证邮箱
       const emailValidation = this.validateEmail(email);
       if (!emailValidation.isValid) {
-        return this.errorResponse('VALIDATION_ERROR', emailValidation.error!);
+        return {
+          success: false,
+          error: { code: 'VALIDATION_ERROR', message: emailValidation.error! },
+          timestamp: Date.now(),
+        };
       }
 
-      // 加载用户列表（添加错误保护）
-      let users = getInitialUsers();
-      const storedUsers = localStorage.getItem(STORAGE_KEYS.USERS);
-      if (storedUsers) {
-        try {
-          const parsed = JSON.parse(storedUsers);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            users = parsed;
-          }
-        } catch (parseError) {
-          console.warn('解析用户数据失败，使用默认 Mock 数据:', parseError);
-          users = getInitialUsers();
-        }
+      // 调用后端 API
+      const response = await authApi.forgotPassword(email);
+
+      if (!response.success) {
+        return {
+          success: false,
+          error: response.error || { code: 'SEND_RESET_ERROR', message: '发送重置邮件失败' },
+          timestamp: Date.now(),
+        };
       }
 
-      // 检查邮箱是否存在
-      const user = users.find((u: { email: string }) => u.email === email);
-      if (!user) {
-        // 为了安全，不暴露邮箱是否存在
-        return this.successResponse({ resetToken: 'mock_token_sent' });
-      }
-
-      // 生成重置令牌
-      const resetToken = this.generateResetToken(email);
-
-      // Mock: 实际应该发送邮件
-      console.warn(`[Mock] 密码重置邮件已发送至：${email}`);
-      console.warn(`[Mock] 重置令牌：${resetToken}`);
-
-      return this.successResponse({ resetToken });
+      return {
+        success: true,
+        data: { resetToken: 'sent' },
+        timestamp: Date.now(),
+      };
     } catch (error) {
-      return this.errorResponse('SEND_RESET_ERROR', '发送重置邮件失败', error);
+      return {
+        success: false,
+        error: {
+          code: 'SEND_RESET_ERROR',
+          message: error instanceof Error ? error.message : '发送重置邮件失败',
+        },
+        timestamp: Date.now(),
+      };
     }
   }
 
@@ -520,62 +411,44 @@ class AuthService {
     credentials: ResetPasswordCredentials
   ): Promise<AuthServiceResponse<{ success: boolean }>> {
     try {
-      await this.simulateDelay();
-
       // 验证新密码
       const passwordValidation = this.validatePassword(credentials.newPassword);
       if (!passwordValidation.isValid) {
-        return this.errorResponse(
-          'VALIDATION_ERROR',
-          `密码强度不足：${passwordValidation.errors.join('，')}`
-        );
+        return {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: `密码强度不足：${passwordValidation.errors.join('，')}`,
+          },
+          timestamp: Date.now(),
+        };
       }
 
-      // 验证重置令牌
-      let tokens: Record<string, { token: string; expiresAt: number }> = {};
-      try {
-        tokens = JSON.parse(localStorage.getItem(STORAGE_KEYS.RESET_TOKENS) || '{}');
-      } catch (parseError) {
-        console.warn('解析重置令牌失败:', parseError);
-        tokens = {};
-      }
-      const email = Object.keys(tokens).find((e) => tokens[e].token === credentials.token);
+      // 调用后端 API
+      const response = await authApi.resetPassword(credentials.token, credentials.newPassword);
 
-      if (!email || tokens[email].expiresAt < Date.now()) {
-        return this.errorResponse('INVALID_TOKEN', '重置令牌无效或已过期');
+      if (!response.success) {
+        return {
+          success: false,
+          error: response.error || { code: 'RESET_ERROR', message: '重置密码失败' },
+          timestamp: Date.now(),
+        };
       }
 
-      // 加载用户列表（添加错误保护）
-      let users = getInitialUsers();
-      const storedUsers = localStorage.getItem(STORAGE_KEYS.USERS);
-      if (storedUsers) {
-        try {
-          const parsed = JSON.parse(storedUsers);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            users = parsed;
-          }
-        } catch (parseError) {
-          console.warn('解析用户数据失败，使用默认 Mock 数据:', parseError);
-          users = getInitialUsers();
-        }
-      }
-
-      // 找到用户并更新密码
-      const userIndex = users.findIndex((u: { email: string }) => u.email === email);
-      if (userIndex === -1) {
-        return this.errorResponse('USER_NOT_FOUND', '用户不存在');
-      }
-
-      users[userIndex].password = credentials.newPassword;
-      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
-
-      // 清除已使用的令牌
-      delete tokens[email];
-      localStorage.setItem(STORAGE_KEYS.RESET_TOKENS, JSON.stringify(tokens));
-
-      return this.successResponse({ success: true });
+      return {
+        success: true,
+        data: { success: true },
+        timestamp: Date.now(),
+      };
     } catch (error) {
-      return this.errorResponse('RESET_ERROR', '重置密码失败', error);
+      return {
+        success: false,
+        error: {
+          code: 'RESET_ERROR',
+          message: error instanceof Error ? error.message : '重置密码失败',
+        },
+        timestamp: Date.now(),
+      };
     }
   }
 
@@ -583,25 +456,91 @@ class AuthService {
    * 验证 Token 是否有效
    */
   verifyToken(): boolean {
-    if (!this.authToken) return false;
-    return this.authToken.expiresAt > Date.now();
+    const token = apiClient.getToken();
+    return token !== null;
   }
 
   /**
    * 刷新 Token
    */
-  async refreshToken(remember?: boolean): Promise<AuthServiceResponse<AuthToken>> {
+  async refreshToken(): Promise<AuthServiceResponse<AuthToken>> {
     try {
-      if (!this.currentUser) {
-        return this.errorResponse('NOT_AUTHENTICATED', '未登录');
+      const refreshToken = localStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
+      if (!refreshToken) {
+        return {
+          success: false,
+          error: { code: 'NOT_AUTHENTICATED', message: '未登录' },
+          timestamp: Date.now(),
+        };
       }
 
-      const token = this.generateToken(remember ?? !!this.authToken?.refreshToken);
-      this.saveAuthToken(token);
+      const response = await authApi.refresh(refreshToken);
 
-      return this.successResponse(token);
+      if (!response.success || !response.data) {
+        // 刷新失败，清理状态
+        this.clearCurrentUser();
+        apiClient.clearToken();
+
+        return {
+          success: false,
+          error: response.error || { code: 'REFRESH_ERROR', message: '刷新令牌失败' },
+          timestamp: Date.now(),
+        };
+      }
+
+      const tokenData = response.data;
+      apiClient.setToken(tokenData.accessToken);
+      localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, tokenData.refreshToken);
+
+      return {
+        success: true,
+        data: this.mapApiTokenToAuthToken(tokenData),
+        timestamp: Date.now(),
+      };
     } catch (error) {
-      return this.errorResponse('REFRESH_ERROR', '刷新令牌失败', error);
+      return {
+        success: false,
+        error: {
+          code: 'REFRESH_ERROR',
+          message: error instanceof Error ? error.message : '刷新令牌失败',
+        },
+        timestamp: Date.now(),
+      };
+    }
+  }
+
+  /**
+   * 从服务器获取当前用户信息
+   */
+  async fetchCurrentUser(): Promise<AuthServiceResponse<CurrentUser>> {
+    try {
+      const response = await authApi.getMe();
+
+      if (!response.success || !response.data) {
+        return {
+          success: false,
+          error: response.error || { code: 'FETCH_ERROR', message: '获取用户信息失败' },
+          timestamp: Date.now(),
+        };
+      }
+
+      const currentUser = this.mapApiUserToCurrentUser(response.data);
+      this.saveCurrentUser(currentUser);
+
+      return {
+        success: true,
+        data: currentUser,
+        timestamp: Date.now(),
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: {
+          code: 'FETCH_ERROR',
+          message: error instanceof Error ? error.message : '获取用户信息失败',
+        },
+        timestamp: Date.now(),
+      };
     }
   }
 }

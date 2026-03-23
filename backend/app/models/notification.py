@@ -3,7 +3,7 @@ Notification Model
 """
 
 import enum
-from sqlalchemy import Column, String, Text, Integer, Boolean, ForeignKey
+from sqlalchemy import Column, String, Text, Integer, Boolean, BigInteger, ForeignKey, Index
 from sqlalchemy.orm import relationship
 
 from app.models.base import BaseModel
@@ -27,11 +27,16 @@ class Notification(BaseModel):
     title = Column(String(255), nullable=False)
     message = Column(Text, nullable=False)
     link = Column(Text, nullable=True)
-    is_read = Column(Boolean, default=False, nullable=False)
-    expires_at = Column(Integer, nullable=True)  # Unix timestamp in milliseconds
+    is_read = Column(Boolean, default=False, nullable=False, index=True)
+    expires_at = Column(BigInteger, nullable=True)  # Unix timestamp in milliseconds
 
     # Relationships
     user = relationship("User", back_populates="notifications")
+
+    # Composite index for efficient unread notification queries
+    __table_args__ = (
+        Index('ix_notifications_user_unread', 'user_id', 'is_read'),
+    )
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""

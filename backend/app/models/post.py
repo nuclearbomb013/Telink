@@ -2,7 +2,7 @@
 Post Model
 """
 
-from sqlalchemy import Column, String, Text, Integer, Boolean, ForeignKey, Table
+from sqlalchemy import Column, String, Text, Integer, Boolean, ForeignKey, Table, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from app.models.base import BaseModel
@@ -80,6 +80,11 @@ class PostLike(BaseModel):
 
     post_id = Column(Integer, ForeignKey("posts.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # Unique constraint: one like per user per post
+    __table_args__ = (
+        UniqueConstraint('user_id', 'post_id', name='uq_post_likes_user_post'),
+    )
 
     # Relationships
     post = relationship("Post", back_populates="post_likes")

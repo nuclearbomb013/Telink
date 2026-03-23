@@ -2,7 +2,7 @@
 Comment API Endpoints
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -273,7 +273,7 @@ async def update_comment(
 
     # Update content
     comment.content = comment_data.content
-    comment.updated_at = datetime.utcnow()
+    comment.updated_at = datetime.now(timezone.utc)
 
     await db.commit()
     await db.refresh(comment)
@@ -341,7 +341,7 @@ async def delete_comment(
     # Soft delete (mark as deleted)
     comment.is_deleted = 1
     comment.content = "[已删除]"
-    comment.updated_at = datetime.utcnow()
+    comment.updated_at = datetime.now(timezone.utc)
 
     # Update user comment count
     if current_user.id == comment.author_id:
