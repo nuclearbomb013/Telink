@@ -2,7 +2,7 @@
 Notification Schemas
 """
 
-from typing import Optional, List
+from typing import Optional, List, Literal
 from pydantic import BaseModel, Field, ConfigDict
 
 
@@ -16,10 +16,13 @@ class NotificationType:
     ALL = [INFO, SUCCESS, WARNING, ERROR]
 
 
+NotificationTypeValue = Literal["info", "success", "warning", "error"]
+
+
 class NotificationBase(BaseModel):
     """Base notification schema."""
 
-    type: str = Field(default="info")
+    type: NotificationTypeValue = Field(default="info")
     title: str = Field(..., min_length=1, max_length=255)
     message: str = Field(..., min_length=1)
     link: Optional[str] = None

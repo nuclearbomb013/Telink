@@ -1,16 +1,13 @@
 /**
  * UserProfilePage - 用户个人主页
- *
- * 显示用户资料、统计信息、发帖历史
  */
 
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Calendar, MessageSquare, FileText, Heart, Award, Edit } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-import { userApi, type UserPublic } from '@/lib/apiClient';
-import { forumApi } from '@/lib/apiClient';
+import { userApi, forumApi, type UserPublic } from '@/lib/apiClient';
 import { userService } from '@/services/user.service';
 
 import UserAvatar from '@/components/Forum/UserAvatar';
@@ -18,9 +15,17 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
-/**
- * 格式化时间
- */
+interface ProfilePost {
+  id: number;
+  slug: string;
+  title: string;
+  category: string;
+  likes: number;
+  views: number;
+  replyCount: number;
+  createdAt: number;
+}
+
 function formatDate(timestamp: number): string {
   return new Date(timestamp).toLocaleDateString('zh-CN', {
     year: 'numeric',
@@ -29,9 +34,6 @@ function formatDate(timestamp: number): string {
   });
 }
 
-/**
- * 格式化相对时间
- */
 function formatRelativeTime(timestamp: number): string {
   const now = Date.now();
   const diff = now - timestamp;
@@ -45,13 +47,9 @@ function formatRelativeTime(timestamp: number): string {
   if (diff < week) return `${Math.floor(diff / day)} 天前`;
   if (diff < month) return `${Math.floor(diff / week)} 周前`;
   if (diff < year) return `${Math.floor(diff / month)} 个月前`;
-
   return `${Math.floor(diff / year)} 年前`;
 }
 
-/**
- * 统计卡片组件
- */
 function StatCard({
   icon: Icon,
   label,
@@ -69,73 +67,51 @@ function StatCard({
         <Icon size={20} />
       </div>
       <div>
-        <div className="font-oswald text-2xl font-light text-brand-text">
-          {value}
-        </div>
-        <div className="font-roboto text-xs text-brand-dark-gray/60">
-          {label}
-        </div>
+        <div className="font-oswald text-2xl font-light text-brand-text">{value}</div>
+        <div className="font-roboto text-xs text-brand-dark-gray/60">{label}</div>
       </div>
     </div>
   );
 }
 
-/**
- * UserProfilePage 组件
- */
 const UserProfilePage = () => {
   const { id: userIdStr } = useParams<{ id: string }>();
   const navigate = useNavigate();
-
   const userId = userIdStr ? parseInt(userIdStr, 10) : null;
 
-  // 状态
   const [user, setUser] = useState<UserPublic | null>(null);
-  const [userPosts, setUserPosts] = useState<Array<{
-    id: number;
-    title: string;
-    category: string;
-    likes: number;
-    views: number;
-    replyCount: number;
-    createdAt: number;
-  }>>([]);
+  const [userPosts, setUserPosts] = useState<ProfilePost[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCurrentUser, setIsCurrentUser] = useState(false);
 
-  /**
-   * 加载数据
-   */
   useEffect(() => {
     const loadData = async () => {
       if (!userId) return;
 
       setLoading(true);
 
-      // 获取当前用户
       const currentUser = userService.getCurrentUser();
       setIsCurrentUser(currentUser?.id === userId);
 
-      // 加载用户信息（使用真实后端 API）
       const userResponse = await userApi.getById(userId);
       if (userResponse.success && userResponse.data) {
         setUser(userResponse.data);
 
-        // 加载用户帖子
         const postsResponse = await forumApi.getPosts({ limit: 50 });
         if (postsResponse.success && postsResponse.data) {
-          const userPostsData = postsResponse.data.posts
-            .filter(p => p.author_id === userId)
-            .map(p => ({
+          const posts = postsResponse.data.posts
+            .filter((p) => p.authorId === userId)
+            .map((p) => ({
               id: p.id,
+              slug: p.slug,
               title: p.title,
               category: p.category,
               likes: p.likes,
               views: p.views,
-              replyCount: p.reply_count,
-              createdAt: p.created_at,
+              replyCount: p.replyCount,
+              createdAt: p.createdAt,
             }));
-          setUserPosts(userPostsData);
+          setUserPosts(posts);
         }
       }
 
@@ -172,13 +148,13 @@ const UserProfilePage = () => {
     );
   }
 
-  const roleLabels = {
+  const roleLabels: Record<string, string> = {
     admin: '管理员',
     moderator: '版主',
     user: '会员',
   };
 
-  const roleColors = {
+  const roleColors: Record<string, string> = {
     admin: 'bg-brand-text text-white',
     moderator: 'bg-brand-dark-gray text-white',
     user: 'bg-brand-linen text-brand-dark-gray',
@@ -187,7 +163,6 @@ const UserProfilePage = () => {
   return (
     <div className="min-h-screen bg-brand-linen pt-32 pb-20">
       <div className="max-w-[1000px] mx-auto px-6">
-        {/* 返回按钮 */}
         <Link
           to="/forum"
           className="inline-flex items-center gap-2 text-brand-dark-gray/70 hover:text-brand-text transition-colors mb-6"
@@ -196,15 +171,11 @@ const UserProfilePage = () => {
           <span className="font-roboto text-sm">返回论坛</span>
         </Link>
 
-        {/* 用户资料卡片 */}
         <Card className="mb-6 overflow-hidden">
-          {/* 封面 */}
           <div className="h-32 bg-gradient-to-r from-brand-text via-brand-dark-gray to-brand-text" />
 
           <CardContent className="p-6">
-            {/* 头像和基本信息 */}
             <div className="flex flex-col sm:flex-row gap-6">
-              {/* 头像 */}
               <div className="-mt-16">
                 <UserAvatar
                   username={user.username}
@@ -214,22 +185,19 @@ const UserProfilePage = () => {
                 />
               </div>
 
-              {/* 信息 */}
               <div className="flex-1 pt-2">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                   <div>
                     <div className="flex items-center gap-3">
-                      <h1 className="font-oswald text-2xl font-light text-brand-text">
-                        {user.username}
-                      </h1>
+                      <h1 className="font-oswald text-2xl font-light text-brand-text">{user.username}</h1>
                       {user.role && (
                         <span
                           className={cn(
                             'px-2 py-0.5 text-xs rounded-full',
-                            roleColors[user.role]
+                            roleColors[user.role] ?? roleColors.user
                           )}
                         >
-                          {roleLabels[user.role]}
+                          {roleLabels[user.role] ?? roleLabels.user}
                         </span>
                       )}
                     </div>
@@ -239,9 +207,7 @@ const UserProfilePage = () => {
                         加入于 {formatDate(user.joinedAt)}
                       </span>
                       {user.lastActiveAt && (
-                        <span>
-                          最后活跃 {formatRelativeTime(user.lastActiveAt)}
-                        </span>
+                        <span>最后活跃 {formatRelativeTime(user.lastActiveAt)}</span>
                       )}
                     </div>
                   </div>
@@ -254,7 +220,6 @@ const UserProfilePage = () => {
                   )}
                 </div>
 
-                {/* 个人简介 */}
                 {user.bio && (
                   <p className="font-roboto text-sm text-brand-dark-gray mt-4 max-w-xl">
                     {user.bio}
@@ -263,37 +228,26 @@ const UserProfilePage = () => {
               </div>
             </div>
 
-            {/* 统计数据 */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6 pt-6 border-t border-brand-border/30">
-              <StatCard
-                icon={FileText}
-                label="帖子"
-                value={user.postCount}
-                color="text-brand-text"
-              />
-              <StatCard
-                icon={MessageSquare}
-                label="评论"
-                value={user.commentCount}
-                color="text-brand-dark-gray"
-              />
-              <StatCard
-                icon={Heart}
-                label="获赞"
-                value={user.likeCount}
-                color="text-red-500"
-              />
+              <StatCard icon={FileText} label="帖子" value={user.postCount} color="text-brand-text" />
+              <StatCard icon={MessageSquare} label="评论" value={user.commentCount} color="text-brand-dark-gray" />
+              <StatCard icon={Heart} label="获赞" value={user.likeCount} color="text-red-500" />
               <StatCard
                 icon={Award}
                 label="等级"
-                value={user.role === 'admin' ? '管理员' : user.role === 'moderator' ? '版主' : 'Lv.' + Math.min(10, Math.floor(user.likeCount / 50) + 1)}
+                value={
+                  user.role === 'admin'
+                    ? '管理员'
+                    : user.role === 'moderator'
+                      ? '版主'
+                      : `Lv.${Math.min(10, Math.floor(user.likeCount / 50) + 1)}`
+                }
                 color="text-brand-dark-gray"
               />
             </div>
           </CardContent>
         </Card>
 
-        {/* 选项卡内容 */}
         <Tabs defaultValue="posts" className="mt-6">
           <TabsList className="bg-white/50 border border-brand-border/30">
             <TabsTrigger value="posts">发帖记录</TabsTrigger>
@@ -310,7 +264,7 @@ const UserProfilePage = () => {
             ) : (
               <div className="space-y-4">
                 {userPosts.map((post) => (
-                  <Link key={post.id} to={`/forum/post/${post.id}`}>
+                  <Link key={post.id} to={`/forum/${post.slug}`}>
                     <Card className="hover:shadow-md transition-shadow cursor-pointer">
                       <CardContent className="p-4">
                         <h3 className="font-oswald text-lg text-brand-text mb-2">{post.title}</h3>
@@ -342,3 +296,4 @@ const UserProfilePage = () => {
 };
 
 export default UserProfilePage;
+

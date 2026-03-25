@@ -6,7 +6,8 @@ from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
+from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import get_db, get_current_active_user
 from app.models.user import User, UserRole
@@ -172,7 +173,7 @@ async def create_comment(
             }
         )
 
-    # If replying, verify parent comment exists
+    # If replying, verify parent comment exists and belongs to same post
     if comment_data.parent_id:
         result = await db.execute(
             select(Comment).where(Comment.id == comment_data.parent_id)
@@ -188,6 +189,41 @@ async def create_comment(
                 }
             )
 
+        # Prevent cross-post parent comment (critical security fix)
+        if parent.post_id != comment_data.post_id:
+            return ServiceResponse(
+                success=False,
+                error={
+                    "code": "BAD_REQUEST",
+                    "message": "Parent comment must belong to the same post"
+                }
+            )
+
+        # Verify reply_to_id also belongs to same post if provided
+        if comment_data.reply_to_id:
+            reply_to_result = await db.execute(
+                select(Comment).where(Comment.id == comment_data.reply_to_id)
+            )
+            reply_to_comment = reply_to_result.scalar_one_or_none()
+            if reply_to_comment and reply_to_comment.post_id != comment_data.post_id:
+                return ServiceResponse(
+                    success=False,
+                    error={
+                        "code": "BAD_REQUEST",
+                        "message": "Reply target must belong to the same post"
+                    }
+                )
+
+    # Derive reply_to_name from database if reply_to_id is provided
+    derived_reply_to_name = None
+    if comment_data.reply_to_id:
+        result = await db.execute(
+            select(Comment).where(Comment.id == comment_data.reply_to_id)
+        )
+        reply_to_comment = result.scalar_one_or_none()
+        if reply_to_comment:
+            derived_reply_to_name = reply_to_comment.author_name
+
     # Create comment
     comment = Comment(
         post_id=comment_data.post_id,
@@ -197,7 +233,8 @@ async def create_comment(
         content=comment_data.content,
         parent_id=comment_data.parent_id,
         reply_to_id=comment_data.reply_to_id,
-        reply_to_name=comment_data.reply_to_name
+        # Use derived name from DB to prevent spoofing (P8-95)
+        reply_to_name=derived_reply_to_name
     )
     db.add(comment)
 
@@ -338,20 +375,48 @@ async def delete_comment(
             }
         )
 
+    # Count child replies for accurate decrement (P8-91)
+    child_replies_count = 0
+    if comment.parent_id is None:
+        # This is a top-level comment, count all its replies
+        result = await db.execute(
+            select(func.count()).select_from(Comment).where(
+                Comment.parent_id == comment.id,
+                Comment.is_deleted == 0
+            )
+        )
+        child_replies_count = result.scalar() or 0
+
+    # Get the comment author for counter update (P8-96)
+    result = await db.execute(select(User).where(User.id == comment.author_id))
+    comment_author = result.scalar_one_or_none()
+
     # Soft delete (mark as deleted)
     comment.is_deleted = 1
     comment.content = "[已删除]"
     comment.updated_at = datetime.now(timezone.utc)
 
-    # Update user comment count
-    if current_user.id == comment.author_id:
-        current_user.comment_count = max(0, current_user.comment_count - 1)
+    # Soft delete all child replies (P8-91)
+    if child_replies_count > 0:
+        from sqlalchemy import update as sql_update
+        await db.execute(
+            sql_update(Comment).where(
+                Comment.parent_id == comment.id,
+                Comment.is_deleted == 0
+            ).values(is_deleted=1, content="[已删除]", updated_at=datetime.now(timezone.utc))
+        )
 
-    # Update post reply count
+    # Update comment author's comment count (P8-96: always update the owner)
+    if comment_author:
+        total_deleted = 1 + child_replies_count
+        comment_author.comment_count = max(0, comment_author.comment_count - total_deleted)
+
+    # Update post reply count with total deleted (P8-91)
     result = await db.execute(select(Post).where(Post.id == comment.post_id))
     post = result.scalar_one_or_none()
     if post:
-        post.reply_count = max(0, post.reply_count - 1)
+        total_deleted = 1 + child_replies_count
+        post.reply_count = max(0, post.reply_count - total_deleted)
 
     await db.commit()
 
@@ -369,6 +434,7 @@ async def toggle_comment_like(
 ):
     """
     Toggle like on a comment.
+    Uses atomic counter updates and handles race conditions (P8-92).
     """
     if not current_user:
         return ServiceResponse(
@@ -402,18 +468,44 @@ async def toggle_comment_like(
     existing_like = result.scalar_one_or_none()
 
     if existing_like:
-        # Unlike
+        # Unlike - atomic counter update
         await db.delete(existing_like)
-        comment.likes = max(0, comment.likes - 1)
+        await db.execute(
+            update(Comment).where(Comment.id == comment_id).values(likes=Comment.likes - 1)
+        )
         liked = False
     else:
-        # Like
+        # Like - use try/except to handle race condition
         like = CommentLike(comment_id=comment_id, user_id=current_user.id)
         db.add(like)
-        comment.likes += 1
-        liked = True
+        try:
+            await db.flush()
+            # Atomic counter update
+            await db.execute(
+                update(Comment).where(Comment.id == comment_id).values(likes=Comment.likes + 1)
+            )
+            liked = True
+        except IntegrityError:
+            # Race condition: like already exists, treat as idempotent success
+            await db.rollback()
+            result = await db.execute(
+                select(CommentLike).where(
+                    CommentLike.comment_id == comment_id,
+                    CommentLike.user_id == current_user.id
+                )
+            )
+            existing_like = result.scalar_one_or_none()
+            if existing_like:
+                # Already liked, return current state
+                liked = True
+            else:
+                # Unknown error, re-raise
+                raise
 
     await db.commit()
+
+    # Refresh to get actual count
+    await db.refresh(comment)
 
     return ServiceResponse(
         success=True,

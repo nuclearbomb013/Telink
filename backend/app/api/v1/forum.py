@@ -69,6 +69,34 @@ async def get_unique_slug(db: AsyncSession, title: str, max_attempts: int = 10) 
     return f"{base_slug}-{int(datetime.now(timezone.utc).timestamp())}"
 
 
+async def get_unique_slug_for_update(
+    db: AsyncSession, title: str, exclude_post_id: int, max_attempts: int = 10
+) -> str:
+    """
+    Generate unique slug for post update, excluding the current post.
+
+    This prevents self-collision when editing a post's title.
+    """
+    base_slug = generate_slug(title)
+    slug = base_slug
+    counter = 1
+
+    for attempt in range(max_attempts):
+        # Exclude current post from the check
+        result = await db.execute(
+            select(Post).where(Post.slug == slug, Post.id != exclude_post_id)
+        )
+        if not result.scalar_one_or_none():
+            return slug
+        counter += 1
+        if attempt > 0:
+            slug = f"{base_slug}-{counter}-{secrets.randbelow(900) + 100}"
+        else:
+            slug = f"{base_slug}-{counter}"
+
+    return f"{base_slug}-{int(datetime.now(timezone.utc).timestamp())}"
+
+
 @router.get("/posts", response_model=ServiceResponse[PostListResult])
 async def get_posts(
     category: Optional[str] = Query(None),
@@ -177,15 +205,15 @@ async def get_posts(
     )
 
 
-@router.get("/posts/{post_id}", response_model=ServiceResponse[PostResponse])
-async def get_post(
-    post_id: int,
+@router.get("/posts/slug/{slug}", response_model=ServiceResponse[PostResponse])
+async def get_post_by_slug(
+    slug: str,
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Get post by ID.
+    Get post by slug.
     """
-    result = await db.execute(select(Post).where(Post.id == post_id))
+    result = await db.execute(select(Post).where(Post.slug == slug))
     post = result.scalar_one_or_none()
 
     if not post:
@@ -199,7 +227,7 @@ async def get_post(
 
     # Increment view count atomically to avoid race conditions
     await db.execute(
-        update(Post).where(Post.id == post_id).values(views=Post.views + 1)
+        update(Post).where(Post.id == post.id).values(views=Post.views + 1)
     )
     await db.commit()
     # Refresh to get updated view count
@@ -236,15 +264,15 @@ async def get_post(
     )
 
 
-@router.get("/posts/slug/{slug}", response_model=ServiceResponse[PostResponse])
-async def get_post_by_slug(
-    slug: str,
+@router.get("/posts/{post_id}", response_model=ServiceResponse[PostResponse])
+async def get_post(
+    post_id: int,
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Get post by slug.
+    Get post by ID.
     """
-    result = await db.execute(select(Post).where(Post.slug == slug))
+    result = await db.execute(select(Post).where(Post.id == post_id))
     post = result.scalar_one_or_none()
 
     if not post:
@@ -258,7 +286,7 @@ async def get_post_by_slug(
 
     # Increment view count atomically to avoid race conditions
     await db.execute(
-        update(Post).where(Post.id == post.id).values(views=Post.views + 1)
+        update(Post).where(Post.id == post_id).values(views=Post.views + 1)
     )
     await db.commit()
     # Refresh to get updated view count
@@ -441,7 +469,22 @@ async def update_post(
     # Update fields
     if post_data.title:
         post.title = post_data.title
-        post.slug = await get_unique_slug(db, post_data.title)
+        # Generate normalized slug from new title
+        new_slug = generate_slug(post_data.title)
+        # Only update slug if the normalized form differs from current slug
+        if new_slug != post.slug:
+            # Check if there's a conflict with another post
+            result = await db.execute(
+                select(Post).where(Post.slug == new_slug, Post.id != post.id)
+            )
+            if result.scalar_one_or_none():
+                # Conflict with another post, need unique slug
+                post.slug = await get_unique_slug_for_update(
+                    db, post_data.title, post.id
+                )
+            else:
+                # No conflict, use the new slug
+                post.slug = new_slug
 
     if post_data.content:
         post.content = post_data.content
@@ -554,9 +597,11 @@ async def delete_post(
             }
         )
 
-    # Update user post count
-    if current_user.id == post.author_id:
-        current_user.post_count = max(0, current_user.post_count - 1)
+    # Update post author's post count (P8-96: always update the owner)
+    result = await db.execute(select(User).where(User.id == post.author_id))
+    post_author = result.scalar_one_or_none()
+    if post_author:
+        post_author.post_count = max(0, post_author.post_count - 1)
 
     # Delete post (cascade will delete tags and likes)
     await db.delete(post)
@@ -576,6 +621,7 @@ async def toggle_like(
 ):
     """
     Toggle like on a post.
+    Uses atomic counter updates and handles race conditions (P8-92).
     """
     if not current_user:
         return ServiceResponse(
@@ -609,18 +655,44 @@ async def toggle_like(
     existing_like = result.scalar_one_or_none()
 
     if existing_like:
-        # Unlike
+        # Unlike - atomic counter update
         await db.delete(existing_like)
-        post.likes = max(0, post.likes - 1)
+        await db.execute(
+            update(Post).where(Post.id == post_id).values(likes=Post.likes - 1)
+        )
         liked = False
     else:
-        # Like
+        # Like - use try/except to handle race condition
         like = PostLike(post_id=post_id, user_id=current_user.id)
         db.add(like)
-        post.likes += 1
-        liked = True
+        try:
+            await db.flush()
+            # Atomic counter update
+            await db.execute(
+                update(Post).where(Post.id == post_id).values(likes=Post.likes + 1)
+            )
+            liked = True
+        except IntegrityError:
+            # Race condition: like already exists, treat as idempotent success
+            await db.rollback()
+            result = await db.execute(
+                select(PostLike).where(
+                    PostLike.post_id == post_id,
+                    PostLike.user_id == current_user.id
+                )
+            )
+            existing_like = result.scalar_one_or_none()
+            if existing_like:
+                # Already liked, return current state
+                liked = True
+            else:
+                # Unknown error, re-raise
+                raise
 
     await db.commit()
+
+    # Refresh to get actual count
+    await db.refresh(post)
 
     return ServiceResponse(
         success=True,

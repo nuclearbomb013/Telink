@@ -4,39 +4,37 @@
  * 展示热门帖子，引导用户访问论坛
  */
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, MessageSquare, TrendingUp } from 'lucide-react';
 
 import { forumService } from '@/services/forum.service';
-import type { ForumPost } from '@/services/forum.types';
+import type { ForumPost, ForumStats } from '@/services/forum.types';
 
 import ForumPostCard from '@/components/Forum/ForumPostCard';
 import { Button } from '@/components/ui/button';
 
-/**
- * ForumSection 组件
- */
 const ForumSection = () => {
   const [hotPosts, setHotPosts] = useState<ForumPost[]>([]);
+  const [stats, setStats] = useState<ForumStats | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const loadHotPosts = async () => {
+    const loadForumData = async () => {
       const response = await forumService.getStats();
       if (response.success && response.data) {
+        setStats(response.data);
         setHotPosts(response.data.hotPosts.slice(0, 3));
       }
       setLoading(false);
     };
 
-    loadHotPosts();
+    loadForumData();
   }, []);
 
   return (
     <section className="py-20 lg:py-28 bg-brand-linen/50">
       <div className="max-w-[1600px] mx-auto px-6 lg:px-12">
-        {/* Section 头部 */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-10">
           <div>
             <h2 className="font-oswald font-light text-3xl lg:text-4xl text-brand-text mb-2">
@@ -60,7 +58,6 @@ const ForumSection = () => {
           </Link>
         </div>
 
-        {/* 热门帖子 */}
         {loading ? (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[...Array(3)].map((_, i) => (
@@ -74,7 +71,7 @@ const ForumSection = () => {
           <div className="text-center py-12 bg-white/50 rounded-lg border border-brand-border/30">
             <MessageSquare size={48} className="mx-auto mb-4 text-brand-light-gray" />
             <p className="font-roboto text-brand-dark-gray/60 mb-4">
-              论坛刚刚上线，快来发布第一个帖子吧！
+              论坛刚刚上线，快来发布第一个帖子吧
             </p>
             <Link to="/forum/create">
               <Button className="bg-brand-text text-white hover:bg-brand-dark-gray">
@@ -84,7 +81,6 @@ const ForumSection = () => {
           </div>
         ) : (
           <>
-            {/* 帖子卡片 */}
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
               {hotPosts.map((post) => (
                 <ForumPostCard
@@ -96,11 +92,10 @@ const ForumSection = () => {
               ))}
             </div>
 
-            {/* 统计数据 */}
             <div className="grid grid-cols-3 gap-6 pt-8 border-t border-brand-border/30">
-              <StatItem label="总帖子数" value="—" icon={MessageSquare} />
-              <StatItem label="总回复数" value="—" icon={MessageSquare} />
-              <StatItem label="活跃用户" value="—" icon={TrendingUp} />
+              <StatItem label="总帖子数" value={stats?.totalPosts ?? 0} icon={MessageSquare} />
+              <StatItem label="总回复数" value={stats?.totalReplies ?? 0} icon={MessageSquare} />
+              <StatItem label="活跃用户" value={stats?.totalUsers ?? 0} icon={TrendingUp} />
             </div>
           </>
         )}
@@ -109,9 +104,6 @@ const ForumSection = () => {
   );
 };
 
-/**
- * 统计项组件
- */
 function StatItem({
   label,
   value,
@@ -137,3 +129,4 @@ function StatItem({
 }
 
 export default ForumSection;
+

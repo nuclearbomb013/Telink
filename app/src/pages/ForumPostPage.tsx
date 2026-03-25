@@ -269,7 +269,7 @@ const ForumPostPage = () => {
   }
 
   const isAuthor = currentUser?.id === post.authorId;
-  const isAdmin = currentUser?.role === 'admin'; // 使用角色判断管理员
+  const canModerate = currentUser?.role === 'admin' || currentUser?.role === 'moderator';
   const categoryLabel = FORUM_CATEGORY_LABELS[post.category];
   const categoryIcon = FORUM_CATEGORY_ICONS[post.category];
 
@@ -357,7 +357,7 @@ const ForumPostPage = () => {
                   </>
                 )}
 
-                {isAdmin && (
+                {canModerate && (
                   <>
                     <Button variant="outline" size="sm" onClick={handleTogglePin}>
                       <Pin size={14} className={cn('mr-1', post.isPinned && 'fill-current')} />

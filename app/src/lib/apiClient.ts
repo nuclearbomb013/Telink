@@ -292,6 +292,20 @@ export interface UserStats {
   followerCount: number;
 }
 
+function mapResponse<TInput, TOutput>(
+  response: ServiceResponse<TInput>,
+  mapper: (data: TInput) => TOutput
+): ServiceResponse<TOutput> {
+  if (response.success && response.data !== undefined) {
+    return { ...response, data: mapper(response.data) };
+  }
+  return {
+    success: response.success,
+    error: response.error,
+    timestamp: response.timestamp,
+  };
+}
+
 /**
  * 后端返回的用户统计数据（snake_case）
  */
@@ -319,18 +333,12 @@ function transformUserStats(raw: UserStatsRaw): UserStats {
 export const userApi = {
   getById: async (userId: number): Promise<ServiceResponse<UserPublic>> => {
     const response = await apiClient.get<UserPublicRaw>(`/users/${userId}`);
-    if (response.success && response.data) {
-      return { ...response, data: transformUserPublic(response.data) };
-    }
-    return response as ServiceResponse<UserPublic>;
+    return mapResponse(response, transformUserPublic);
   },
 
   getByUsername: async (username: string): Promise<ServiceResponse<UserPublic>> => {
     const response = await apiClient.get<UserPublicRaw>(`/users/username/${encodeURIComponent(username)}`);
-    if (response.success && response.data) {
-      return { ...response, data: transformUserPublic(response.data) };
-    }
-    return response as ServiceResponse<UserPublic>;
+    return mapResponse(response, transformUserPublic);
   },
 
   update: async (userId: number, data: Partial<UserPublic>): Promise<ServiceResponse<UserPublic>> => {
@@ -341,18 +349,12 @@ export const userApi = {
     if (data.bio !== undefined) backendData.bio = data.bio;
 
     const response = await apiClient.put<UserPublicRaw>(`/users/${userId}`, backendData);
-    if (response.success && response.data) {
-      return { ...response, data: transformUserPublic(response.data) };
-    }
-    return response as ServiceResponse<UserPublic>;
+    return mapResponse(response, transformUserPublic);
   },
 
   getStats: async (userId: number): Promise<ServiceResponse<UserStats>> => {
     const response = await apiClient.get<UserStatsRaw>(`/users/${userId}/stats`);
-    if (response.success && response.data) {
-      return { ...response, data: transformUserStats(response.data) };
-    }
-    return response as ServiceResponse<UserStats>;
+    return mapResponse(response, transformUserStats);
   },
 };
 
@@ -488,29 +490,43 @@ export interface CreatePostData {
   excerpt?: string;
 }
 
+interface ForumStatsRaw {
+  total_posts: number;
+  total_replies: number;
+  total_users: number;
+  posts_by_category: Record<string, number>;
+}
+
+export interface ForumStatsData {
+  totalPosts: number;
+  totalReplies: number;
+  totalUsers: number;
+  postsByCategory: Record<string, number>;
+}
+
+function transformForumStats(raw: ForumStatsRaw): ForumStatsData {
+  return {
+    totalPosts: raw.total_posts,
+    totalReplies: raw.total_replies,
+    totalUsers: raw.total_users,
+    postsByCategory: raw.posts_by_category ?? {},
+  };
+}
+
 export const forumApi = {
   getPosts: async (params?: PostListParams): Promise<ServiceResponse<PostListResult>> => {
     const response = await apiClient.get<PostListResultRaw>('/forum/posts', params as Record<string, string | number>);
-    if (response.success && response.data) {
-      return { ...response, data: transformPostListResult(response.data) };
-    }
-    return response as ServiceResponse<PostListResult>;
+    return mapResponse(response, transformPostListResult);
   },
 
   getPostById: async (postId: number): Promise<ServiceResponse<Post>> => {
     const response = await apiClient.get<PostRaw>(`/forum/posts/${postId}`);
-    if (response.success && response.data) {
-      return { ...response, data: transformPost(response.data) };
-    }
-    return response as ServiceResponse<Post>;
+    return mapResponse(response, transformPost);
   },
 
   getPostBySlug: async (slug: string): Promise<ServiceResponse<Post>> => {
     const response = await apiClient.get<PostRaw>(`/forum/posts/slug/${slug}`);
-    if (response.success && response.data) {
-      return { ...response, data: transformPost(response.data) };
-    }
-    return response as ServiceResponse<Post>;
+    return mapResponse(response, transformPost);
   },
 
   createPost: async (data: CreatePostData): Promise<ServiceResponse<Post>> => {
@@ -524,10 +540,7 @@ export const forumApi = {
       excerpt: data.excerpt,
     };
     const response = await apiClient.post<PostRaw>('/forum/posts', backendData);
-    if (response.success && response.data) {
-      return { ...response, data: transformPost(response.data) };
-    }
-    return response as ServiceResponse<Post>;
+    return mapResponse(response, transformPost);
   },
 
   updatePost: async (postId: number, data: Partial<CreatePostData>): Promise<ServiceResponse<Post>> => {
@@ -541,10 +554,7 @@ export const forumApi = {
     if (data.excerpt !== undefined) backendData.excerpt = data.excerpt;
 
     const response = await apiClient.put<PostRaw>(`/forum/posts/${postId}`, backendData);
-    if (response.success && response.data) {
-      return { ...response, data: transformPost(response.data) };
-    }
-    return response as ServiceResponse<Post>;
+    return mapResponse(response, transformPost);
   },
 
   deletePost: (postId: number) =>
@@ -559,13 +569,10 @@ export const forumApi = {
   toggleLock: (postId: number) =>
     apiClient.post<{ isLocked: boolean }>(`/forum/posts/${postId}/lock`),
 
-  getStats: () =>
-    apiClient.get<{
-      totalPosts: number;
-      totalReplies: number;
-      totalUsers: number;
-      postsByCategory: Record<string, number>;
-    }>('/forum/stats'),
+  getStats: async (): Promise<ServiceResponse<ForumStatsData>> => {
+    const response = await apiClient.get<ForumStatsRaw>('/forum/stats');
+    return mapResponse(response, transformForumStats);
+  },
 };
 
 // ==================== 评论 API ====================
@@ -659,19 +666,13 @@ export interface CreateCommentData {
 export const commentApi = {
   getComments: async (postId: number, params?: { page?: number; limit?: number; sortBy?: string }): Promise<ServiceResponse<CommentListResult>> => {
     const response = await apiClient.get<CommentListResultRaw>('/comments', { postId, ...params } as Record<string, string | number>);
-    if (response.success && response.data) {
-      return {
-        ...response,
-        data: {
-          comments: response.data.comments.map(transformComment),
-          total: response.data.total,
-          page: response.data.page,
-          limit: response.data.limit,
-          totalPages: response.data.total_pages,
-        },
-      };
-    }
-    return response as ServiceResponse<CommentListResult>;
+    return mapResponse(response, (data) => ({
+      comments: data.comments.map(transformComment),
+      total: data.total,
+      page: data.page,
+      limit: data.limit,
+      totalPages: data.total_pages,
+    }));
   },
 
   createComment: async (data: CreateCommentData): Promise<ServiceResponse<Comment>> => {
@@ -683,18 +684,12 @@ export const commentApi = {
       reply_to_name: data.replyToName,
     };
     const response = await apiClient.post<CommentRaw>('/comments', backendData);
-    if (response.success && response.data) {
-      return { ...response, data: transformComment(response.data) };
-    }
-    return response as ServiceResponse<Comment>;
+    return mapResponse(response, transformComment);
   },
 
   updateComment: async (commentId: number, content: string): Promise<ServiceResponse<Comment>> => {
     const response = await apiClient.put<CommentRaw>(`/comments/${commentId}`, { content });
-    if (response.success && response.data) {
-      return { ...response, data: transformComment(response.data) };
-    }
-    return response as ServiceResponse<Comment>;
+    return mapResponse(response, transformComment);
   },
 
   deleteComment: (commentId: number) =>
@@ -768,17 +763,11 @@ interface NotificationListResultRaw {
 export const notificationApi = {
   getNotifications: async (params?: { page?: number; limit?: number; unreadOnly?: boolean }): Promise<ServiceResponse<NotificationListResult>> => {
     const response = await apiClient.get<NotificationListResultRaw>('/notifications', params as Record<string, string | number>);
-    if (response.success && response.data) {
-      return {
-        ...response,
-        data: {
-          notifications: response.data.notifications.map(transformNotification),
-          total: response.data.total,
-          unreadCount: response.data.unread_count,
-        },
-      };
-    }
-    return response as ServiceResponse<NotificationListResult>;
+    return mapResponse(response, (data) => ({
+      notifications: data.notifications.map(transformNotification),
+      total: data.total,
+      unreadCount: data.unread_count,
+    }));
   },
 
   markAsRead: (notificationId: number) =>

@@ -29,17 +29,17 @@ class CommentService {
   private mapApiCommentToComment(apiComment: ApiComment): Comment {
     return {
       id: apiComment.id,
-      postId: apiComment.post_id,
-      authorId: apiComment.author_id,
-      authorName: apiComment.author_name,
-      authorAvatar: apiComment.author_avatar,
+      postId: apiComment.postId,
+      authorId: apiComment.authorId,
+      authorName: apiComment.authorName,
+      authorAvatar: apiComment.authorAvatar,
       content: apiComment.content,
       likes: apiComment.likes,
-      parentId: apiComment.parent_id,
-      replyToId: apiComment.reply_to_id,
-      replyToName: apiComment.reply_to_name,
-      createdAt: apiComment.created_at,
-      updatedAt: apiComment.updated_at,
+      parentId: apiComment.parentId,
+      replyToId: apiComment.replyToId,
+      replyToName: apiComment.replyToName,
+      createdAt: apiComment.createdAt,
+      updatedAt: apiComment.updatedAt,
     };
   }
 
@@ -76,7 +76,7 @@ class CommentService {
           total: data.total,
           page: data.page,
           limit: data.limit,
-          totalPages: data.total_pages,
+          totalPages: data.totalPages,
         },
         timestamp: Date.now(),
       };
@@ -131,11 +131,11 @@ class CommentService {
       }
 
       const apiData: ApiCreateCommentData = {
-        post_id: data.postId,
+        postId: data.postId,
         content: data.content.trim(),
-        parent_id: data.parentId,
-        reply_to_id: data.replyToId,
-        reply_to_name: data.replyToName,
+        parentId: data.parentId,
+        replyToId: data.replyToId,
+        replyToName: data.replyToName,
       };
 
       const response = await commentApi.createComment(apiData);

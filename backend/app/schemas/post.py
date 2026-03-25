@@ -2,7 +2,7 @@
 Post Schemas
 """
 
-from typing import Optional, List
+from typing import Optional, List, Literal
 from pydantic import BaseModel, Field, ConfigDict
 
 
@@ -17,12 +17,15 @@ class PostCategory:
     ALL = [ANNOUNCE, GENERAL, HELP, SHOWCASE, JOBS]
 
 
+PostCategoryValue = Literal["announce", "general", "help", "showcase", "jobs"]
+
+
 class PostBase(BaseModel):
     """Base post schema."""
 
     title: str = Field(..., min_length=1, max_length=255)
     content: str = Field(..., min_length=1, max_length=50000)
-    category: str = Field(..., description="Post category")
+    category: PostCategoryValue = Field(..., description="Post category")
     tags: List[str] = Field(default_factory=list)
     cover_image: Optional[str] = None
     excerpt: Optional[str] = None
@@ -39,7 +42,7 @@ class PostUpdate(BaseModel):
 
     title: Optional[str] = Field(None, min_length=1, max_length=255)
     content: Optional[str] = Field(None, min_length=1, max_length=50000)
-    category: Optional[str] = None
+    category: Optional[PostCategoryValue] = None
     tags: Optional[List[str]] = None
     cover_image: Optional[str] = None
     excerpt: Optional[str] = None
@@ -59,7 +62,7 @@ class PostResponse(BaseModel):
     author_id: int
     author_name: str
     author_avatar: Optional[str] = None
-    category: str
+    category: PostCategoryValue
     tags: List[str] = Field(default_factory=list)
     views: int = 0
     likes: int = 0
@@ -85,7 +88,7 @@ class PostListResponse(BaseModel):
     author_id: int
     author_name: str
     author_avatar: Optional[str] = None
-    category: str
+    category: PostCategoryValue
     tags: List[str] = Field(default_factory=list)
     views: int = 0
     likes: int = 0
@@ -107,7 +110,7 @@ class PostListResult(BaseModel):
 class GetPostsParams(BaseModel):
     """Get posts query parameters."""
 
-    category: Optional[str] = None
+    category: Optional[PostCategoryValue] = None
     sortBy: Optional[str] = Field(None, description="newest|oldest|popular|liked")
     page: int = Field(default=1, ge=1)
     limit: int = Field(default=10, ge=1, le=100)

@@ -65,7 +65,8 @@ async def get_notifications(
     unread_query = select(func.count()).select_from(
         select(Notification).where(
             Notification.user_id == current_user.id,
-            Notification.is_read.is_(False)
+            Notification.is_read.is_(False),
+            (Notification.expires_at.is_(None)) | (Notification.expires_at > current_time)
         ).subquery()
     )
     unread_result = await db.execute(unread_query)

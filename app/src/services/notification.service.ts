@@ -29,8 +29,8 @@ class NotificationService {
       type: apiNotif.type as NotificationType,
       title: apiNotif.title,
       message: apiNotif.message,
-      createdAt: apiNotif.created_at,
-      read: apiNotif.is_read,
+      createdAt: apiNotif.createdAt,
+      read: apiNotif.isRead,
       actionUrl: apiNotif.link,
     };
   }
@@ -69,7 +69,7 @@ class NotificationService {
 
       const data = response.data;
       this.cachedNotifications = data.notifications.map(this.mapApiNotificationToNotification);
-      this.cachedUnreadCount = data.unread_count;
+      this.cachedUnreadCount = data.unreadCount;
 
       this.notifyListeners();
 

@@ -36,18 +36,18 @@ class ForumService {
       slug: apiPost.slug,
       content: apiPost.content,
       category: apiPost.category as ForumCategory,
-      authorId: apiPost.author_id,
-      authorName: apiPost.author_name,
-      authorAvatar: apiPost.author_avatar,
+      authorId: apiPost.authorId,
+      authorName: apiPost.authorName,
+      authorAvatar: apiPost.authorAvatar,
       views: apiPost.views,
       likes: apiPost.likes,
-      replyCount: apiPost.reply_count,
-      createdAt: apiPost.created_at,
-      updatedAt: apiPost.updated_at,
+      replyCount: apiPost.replyCount,
+      createdAt: apiPost.createdAt,
+      updatedAt: apiPost.updatedAt,
       tags: apiPost.tags,
-      isPinned: apiPost.is_pinned,
-      isLocked: apiPost.is_locked,
-      coverImage: apiPost.cover_image,
+      isPinned: apiPost.isPinned,
+      isLocked: apiPost.isLocked,
+      coverImage: apiPost.coverImage,
       excerpt: apiPost.excerpt,
     };
   }
@@ -61,7 +61,7 @@ class ForumService {
       content: data.content,
       category: data.category,
       tags: data.tags,
-      cover_image: data.coverImage,
+      coverImage: data.coverImage,
       excerpt: data.excerpt,
     };
   }
@@ -102,7 +102,7 @@ class ForumService {
           total: data.total,
           page: data.page,
           limit: data.limit,
-          totalPages: data.total_pages,
+          totalPages: data.totalPages,
         },
         timestamp: Date.now(),
       };
@@ -240,7 +240,7 @@ class ForumService {
       if (data.content) updateData.content = data.content;
       if (data.category) updateData.category = data.category;
       if (data.tags) updateData.tags = data.tags;
-      if (data.coverImage) updateData.cover_image = data.coverImage;
+      if (data.coverImage) updateData.coverImage = data.coverImage;
       if (data.excerpt) updateData.excerpt = data.excerpt;
 
       const response = await forumApi.updatePost(data.id, updateData);
@@ -436,11 +436,11 @@ class ForumService {
 
       const data = response.data;
       const postsByCategory: Record<ForumCategory, number> = {
-        announce: data.posts_by_category?.announce || 0,
-        general: data.posts_by_category?.general || 0,
-        help: data.posts_by_category?.help || 0,
-        showcase: data.posts_by_category?.showcase || 0,
-        jobs: data.posts_by_category?.jobs || 0,
+        announce: data.postsByCategory?.announce || 0,
+        general: data.postsByCategory?.general || 0,
+        help: data.postsByCategory?.help || 0,
+        showcase: data.postsByCategory?.showcase || 0,
+        jobs: data.postsByCategory?.jobs || 0,
       };
 
       // 获取热门帖子
@@ -452,9 +452,9 @@ class ForumService {
       return {
         success: true,
         data: {
-          totalPosts: data.total_posts,
-          totalReplies: data.total_replies,
-          totalUsers: data.total_users,
+          totalPosts: data.totalPosts,
+          totalReplies: data.totalReplies,
+          totalUsers: data.totalUsers,
           postsByCategory,
           hotPosts: hotPostsResponse.success && hotPostsResponse.data
             ? hotPostsResponse.data.posts
