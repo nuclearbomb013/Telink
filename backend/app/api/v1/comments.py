@@ -200,12 +200,23 @@ async def create_comment(
             )
 
         # Verify reply_to_id also belongs to same post if provided
+        # Also derive reply_to_name from DB to prevent spoofing
+        derived_reply_to_name = None
         if comment_data.reply_to_id:
             reply_to_result = await db.execute(
                 select(Comment).where(Comment.id == comment_data.reply_to_id)
             )
             reply_to_comment = reply_to_result.scalar_one_or_none()
-            if reply_to_comment and reply_to_comment.post_id != comment_data.post_id:
+            # P8-95: reply_to_id must exist and belong to same post
+            if not reply_to_comment:
+                return ServiceResponse(
+                    success=False,
+                    error={
+                        "code": "BAD_REQUEST",
+                        "message": "Reply target comment not found"
+                    }
+                )
+            if reply_to_comment.post_id != comment_data.post_id:
                 return ServiceResponse(
                     success=False,
                     error={
@@ -213,15 +224,7 @@ async def create_comment(
                         "message": "Reply target must belong to the same post"
                     }
                 )
-
-    # Derive reply_to_name from database if reply_to_id is provided
-    derived_reply_to_name = None
-    if comment_data.reply_to_id:
-        result = await db.execute(
-            select(Comment).where(Comment.id == comment_data.reply_to_id)
-        )
-        reply_to_comment = result.scalar_one_or_none()
-        if reply_to_comment:
+            # Derive reply_to_name from DB to prevent spoofing
             derived_reply_to_name = reply_to_comment.author_name
 
     # Create comment
@@ -377,15 +380,19 @@ async def delete_comment(
 
     # Count child replies for accurate decrement (P8-91)
     child_replies_count = 0
+    child_reply_author_ids: set = set()
     if comment.parent_id is None:
-        # This is a top-level comment, count all its replies
+        # This is a top-level comment, count all its replies and collect author IDs
         result = await db.execute(
-            select(func.count()).select_from(Comment).where(
+            select(Comment).where(
                 Comment.parent_id == comment.id,
                 Comment.is_deleted == 0
             )
         )
-        child_replies_count = result.scalar() or 0
+        child_replies = result.scalars().all()
+        child_replies_count = len(child_replies)
+        # Collect unique author IDs from child replies (P8-96)
+        child_reply_author_ids = {reply.author_id for reply in child_replies if reply.author_id != comment.author_id}
 
     # Get the comment author for counter update (P8-96)
     result = await db.execute(select(User).where(User.id == comment.author_id))
@@ -410,6 +417,17 @@ async def delete_comment(
     if comment_author:
         total_deleted = 1 + child_replies_count
         comment_author.comment_count = max(0, comment_author.comment_count - total_deleted)
+
+    # Update child reply authors' comment counts (P8-96)
+    # Each child reply author loses 1 from their comment_count
+    if child_reply_author_ids:
+        for author_id in child_reply_author_ids:
+            result = await db.execute(select(User).where(User.id == author_id))
+            child_author = result.scalar_one_or_none()
+            if child_author:
+                # Count how many of this author's replies are being deleted
+                author_replies_count = sum(1 for reply in child_replies if reply.author_id == author_id)
+                child_author.comment_count = max(0, child_author.comment_count - author_replies_count)
 
     # Update post reply count with total deleted (P8-91)
     result = await db.execute(select(Post).where(Post.id == comment.post_id))

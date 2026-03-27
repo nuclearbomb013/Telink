@@ -464,6 +464,12 @@ test: pytest tests/ -v
 | 2026-03-25 | P8-92 | Add atomic like counters with race condition handling | - |
 | 2026-03-25 | P8-95 | Derive reply_to_name from DB to prevent spoofing | - |
 | 2026-03-25 | P8-96 | Fix counter drift on moderator/admin deletion | - |
+| 2026-03-26 | P8-89/P8-95/P8-96/P8-97 | Re-review: marked as partially fixed, reopened with concrete gaps | - |
+| 2026-03-27 | P8-89 | Add get_base_slug() for proper slug comparison on title edit | - |
+| 2026-03-27 | P8-94 | Fix stale closure in ForumEditPage author check | - |
+| 2026-03-27 | P8-95 | Add reply_to_id existence validation and merge duplicate queries | - |
+| 2026-03-27 | P8-96 | Update all child reply authors' comment_count on top-level delete | - |
+| 2026-03-27 | P8-97 | Add expires_at filter to unread-count endpoint | - |
 
 ---
 
@@ -479,8 +485,8 @@ test: pytest tests/ -v
 | P5 | 6 | 6 | 0 | 0 | 100% |
 | P6 | 5 | 0 | 5 | 0 | 0% |
 | P7 | 5 | 4 | 1 | 0 | 80% |
-| P8 | 16 | 12 | 4 | 0 | 75% |
-| **Total** | **105** | **79** | **26** | **0** | **75%** |
+| P8 | 16 | 13 | 3 | 0 | 81% |
+| **Total** | **105** | **80** | **25** | **0** | **76%** |
 
 ---
 
@@ -563,15 +569,15 @@ Phase 10 (Warnings):  P6-78~82
 | ID | Status | Problem | Location | Impact |
 |----|--------|---------|----------|--------|
 | P8-88 | `[x]` | Slug route shadowed by `/{post_id}` route order | `backend/app/api/v1/forum.py:180,239` | Critical (post detail by slug can return 422) |
-| P8-89 | `[x]` | Editing title always regenerates slug (self-collision) | `backend/app/api/v1/forum.py:442-444` | High (URL instability / SEO break) |
+| P8-89 | `[x]` | Editing title can still regenerate slug for semantic-same title when current slug has suffix | `backend/app/api/v1/forum.py:471-486` | High (URL instability / SEO break) |
 | P8-90 | `[x]` | Reply parent comment not validated to same post | `backend/app/api/v1/comments.py:176-200` | Critical (cross-post thread corruption) |
 | P8-91 | `[x]` | Soft-delete top-level comment hides children but decrements count by 1 only | `backend/app/api/v1/comments.py:54-55,80-85,342-354` | High (data/stat inconsistency) |
 | P8-92 | `[x]` | Like toggle not atomic; concurrent likes can raise IntegrityError and drift counters | `backend/app/api/v1/forum.py:609-620`, `backend/app/api/v1/comments.py:402-413` | Critical (500 errors + wrong counts) |
 | P8-93 | `[x]` | Frontend forum contract drift (`snake_case` vs `camelCase`) blocks build | `app/src/services/forum.service.ts`, `app/src/services/comment.service.ts`, `app/src/services/notification.service.ts`, `app/src/lib/apiClient.ts` | Critical (frontend build blocked) |
-| P8-94 | `[ ]` | Edit-page author check uses stale `currentUser` closure | `app/src/pages/ForumEditPage.tsx:67,77,120,123` | High (author may be denied edit) |
-| P8-95 | `[x]` | `reply_to_id/reply_to_name` trusted from client without integrity check | `backend/app/api/v1/comments.py:199-200` | High (spoofed reply target) |
-| P8-96 | `[x]` | Moderator/Admin deleting others' content does not fix original author counters | `backend/app/api/v1/forum.py:558`, `backend/app/api/v1/comments.py:347` | High (user stats drift) |
-| P8-97 | `[x]` | Unread notification count includes expired notifications | `backend/app/api/v1/notifications.py:53,65-70` | Medium (badge inconsistency) |
+| P8-94 | `[x]` | Edit-page author check uses stale `currentUser` closure | `app/src/pages/ForumEditPage.tsx:67,77,120,123` | High (author may be denied edit) |
+| P8-95 | `[x]` | `reply_to_id` integrity validation is still incomplete (missing/not-found or cross-post cases can slip to DB error) | `backend/app/api/v1/comments.py:203-225,234-237` | High (spoofing/500 risk) |
+| P8-96 | `[x]` | Deleting top-level comment decrements only parent author counter, not all deleted reply authors | `backend/app/api/v1/comments.py:390-413` | High (user stats drift) |
+| P8-97 | `[x]` | Expired filter missing in `/notifications/unread-count` endpoint | `backend/app/api/v1/notifications.py:289-295` | Medium (badge inconsistency) |
 | P8-98 | `[x]` | Missing enum validation for post category and notification type | `backend/app/schemas/post.py:28`, `backend/app/schemas/notification.py:25` | Medium (invalid domain values accepted) |
 | P8-99 | `[ ]` | N+1 queries in posts/tags and comments/replies loading | `backend/app/api/v1/forum.py:143-145`, `backend/app/api/v1/comments.py:80-82` | Medium (performance degradation) |
 | P8-100 | `[ ]` | Reply threading broken in UI (replies dropped/flattened) | `app/src/services/comment.service.ts:29-42,70`, `app/src/pages/ForumPostPage.tsx:194,454` | High (incorrect discussion structure) |
@@ -593,7 +599,7 @@ test: Add API test for GET /api/v1/forum/posts/slug/{slug} expecting non-422 beh
 target: P8-89
 allowed: [backend/app/api/v1/forum.py]
 locked: []
-strategy: Keep current slug when normalized title slug equals existing slug for same post; only regenerate on real slug conflict
+strategy: Compare normalized old-title slug vs new-title slug (not current post.slug); if semantically unchanged, keep existing slug exactly
 test: Update title with same semantic slug and assert slug remains unchanged
 ```
 
@@ -647,7 +653,7 @@ test: Author can open /forum/edit/:id without false "no permission" redirect
 target: P8-95
 allowed: [backend/app/api/v1/comments.py]
 locked: []
-strategy: Ignore client-provided reply_to_name; derive from DB by reply_to_id; validate reply_to_id exists
+strategy: Ignore client-provided reply_to_name; derive from DB by reply_to_id; always validate reply_to_id exists and belongs to same post/thread (even when parent_id is null)
 test: Crafted payload with fake reply_to_name must be rejected or overwritten with canonical name
 ```
 
@@ -656,8 +662,8 @@ test: Crafted payload with fake reply_to_name must be rejected or overwritten wi
 target: P8-96
 allowed: [backend/app/api/v1/forum.py, backend/app/api/v1/comments.py]
 locked: []
-strategy: Always update counters for content owner, not acting user
-test: Moderator deletes another user's post/comment and owner counters decrease correctly
+strategy: Always update counters for content owner(s), not acting user; for top-level delete with child replies, decrement each deleted comment's author counter accurately
+test: Moderator deletes another user's post/comment and all affected owners' counters decrease correctly
 ```
 
 ### P8-97: Expired notifications counted as unread
@@ -665,8 +671,19 @@ test: Moderator deletes another user's post/comment and owner counters decrease 
 target: P8-97
 allowed: [backend/app/api/v1/notifications.py]
 locked: []
-strategy: Apply same expires_at filter to unread_count query as list query
-test: Expired unread notifications should not appear in unread_count
+strategy: Apply same expires_at filter to both list unread_count and dedicated `/notifications/unread-count` endpoint
+test: Expired unread notifications should not appear in list unread_count and unread-count API
+```
+
+### 2026-03-26 Re-review Notes
+```yaml
+scope: Re-check of completed P8 backend fixes (forum/comments/notifications)
+verified_by: Manual code review + pytest (59/59 pass, but no targeted tests for these paths)
+findings:
+  - P8-89 reopened: slug comparison currently uses `new_slug != post.slug`, which can still rewrite suffix slugs on semantic-same title edit.
+  - P8-95 reopened: `reply_to_id` not-found/cross-post validation is incomplete when `parent_id` is absent or target comment does not exist.
+  - P8-96 reopened: subtree soft-delete decrements only top-level author's `comment_count`, not each deleted reply author.
+  - P8-97 reopened: `/notifications/unread-count` still counts expired notifications.
 ```
 
 ### P8-98: Domain value validation gaps

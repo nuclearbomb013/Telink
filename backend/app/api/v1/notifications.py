@@ -286,11 +286,13 @@ async def get_unread_count(
             }
         )
 
-    # Count unread
+    # Count unread (P8-97: exclude expired notifications)
+    current_time = int(datetime.now(timezone.utc).timestamp() * 1000)
     result = await db.execute(
         select(func.count()).select_from(Notification).where(
             Notification.user_id == current_user.id,
-            Notification.is_read.is_(False)
+            Notification.is_read.is_(False),
+            (Notification.expires_at.is_(None)) | (Notification.expires_at > current_time)
         )
     )
     count = result.scalar() or 0

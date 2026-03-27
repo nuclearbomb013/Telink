@@ -42,6 +42,24 @@ def generate_slug(title: str) -> str:
     return slug[:100] or 'post'
 
 
+def get_base_slug(slug: str) -> str:
+    """
+    Extract base slug by removing numeric suffix.
+
+    Examples:
+        "hello-world" -> "hello-world"
+        "hello-world-1" -> "hello-world"
+        "hello-world-2-100" -> "hello-world-2" (only removes last numeric suffix)
+        "hello-world-1234567890" -> "hello-world" (timestamp suffix)
+    """
+    # Match pattern: base-N or base-timestamp
+    # Remove trailing -N or -timestamp where N is a small number or timestamp
+    match = re.match(r'^(.+?)(?:-\d+)$', slug)
+    if match:
+        return match.group(1)
+    return slug
+
+
 async def get_unique_slug(db: AsyncSession, title: str, max_attempts: int = 10) -> str:
     """
     Generate unique slug for post.
@@ -471,8 +489,12 @@ async def update_post(
         post.title = post_data.title
         # Generate normalized slug from new title
         new_slug = generate_slug(post_data.title)
-        # Only update slug if the normalized form differs from current slug
-        if new_slug != post.slug:
+        # Get base slug from current slug (removes numeric suffix like -1, -2, -timestamp)
+        current_base_slug = get_base_slug(post.slug)
+        # Only update slug if the semantic meaning has changed
+        # Compare new_slug with the base of current slug to avoid regenerating
+        # suffixes when title is semantically the same
+        if new_slug != current_base_slug:
             # Check if there's a conflict with another post
             result = await db.execute(
                 select(Post).where(Post.slug == new_slug, Post.id != post.id)

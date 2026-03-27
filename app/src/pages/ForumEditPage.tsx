@@ -63,8 +63,10 @@ const ForumEditPage = () => {
   /**
    * 加载帖子数据
    * 包含多个 setState 调用用于同步加载的帖子数据
+   * @param postId - 帖子 ID
+   * @param userId - 当前用户 ID（避免闭包引用过期 state）
    */
-  const loadPost = async (postId: number) => {
+  const loadPost = async (postId: number, userId?: number) => {
     if (!postId) return;
 
     setLoading(true);
@@ -73,8 +75,8 @@ const ForumEditPage = () => {
     if (response.success && response.data) {
       const postData = response.data;
 
-      // 检查是否是作者
-      const isAuthor = currentUser?.id === postData.authorId;
+      // 检查是否是作者（使用传入的 userId 避免闭包问题）
+      const isAuthor = userId === postData.authorId;
       if (!isAuthor) {
         alert('您没有权限编辑此帖子');
         navigate(`/forum/${postData.slug}`, { replace: true });
@@ -119,8 +121,8 @@ const ForumEditPage = () => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setCurrentUser(user);
 
-    // 加载帖子数据
-    loadPost(parseInt(id || '0', 10));
+    // 加载帖子数据（传入 user.id 避免闭包问题）
+    loadPost(parseInt(id || '0', 10), user.id);
   }, [id, navigate]);
 
   /**
