@@ -170,7 +170,6 @@ const SearchBar = ({
    */
   useEffect(() => {
     if (initialQuery !== query) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setQuery(initialQuery);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps

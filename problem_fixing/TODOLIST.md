@@ -68,11 +68,11 @@
 |----|--------|---------|----------|
 | P2-23 | `[x]` | Pydantic v2 compat | Multiple |
 | P2-24 | `[x]` | Unused imports | `app/api/v1/users.py:6` |
-| P2-25 | `[ ]` | Duplicate pwd validation | `security.py`, `auth.py` |
+| P2-25 | `[x]` | Duplicate pwd validation | `security.py`, `auth.py` |
 | P2-26 | `[x]` | Timestamp unit | Multiple |
 | P2-27 | `[x]` | Deps not locked | `requirements.txt` |
 | P2-28 | `[x]` | Health check incomplete | `app/main.py:48` |
-| P2-29 | `[ ]` | XSS protection | User input |
+| P2-29 | `[x]` | XSS protection | User input |
 | P2-30 | `[x]` | DB session not closed | `app/api/deps.py:20` |
 
 ## P3 - Code Quality (Auto-detected 2026-03-22, Updated 2026-03-23)
@@ -473,6 +473,8 @@ test: pytest tests/ -v
 | 2026-03-27 | P8-99 | Batch load tags/replies to fix N+1 query performance issue | - |
 | 2026-03-27 | P8-100 | Add replies field to Comment type and recursive mapping | - |
 | 2026-03-27 | P8-101 | Use API returned likes count for comment like UI update | - |
+| 2026-03-27 | P2-25 | Unify password validation to use PasswordManager | - |
+| 2026-03-27 | P2-29 | Add sanitizeHtml function for XSS protection in MarkdownRenderer | - |
 
 ---
 
@@ -482,14 +484,14 @@ test: pytest tests/ -v
 |----------|-------|------|---------|---------|------|
 | P0 | 10 | 10 | 0 | 0 | 100% |
 | P1 | 12 | 12 | 0 | 0 | 100% |
-| P2 | 8 | 6 | 2 | 0 | 75% |
+| P2 | 8 | 8 | 0 | 0 | 100% |
 | P3 | 29 | 29 | 0 | 0 | 100% |
 | P4 | 14 | 0 | 14 | 0 | 0% |
 | P5 | 6 | 6 | 0 | 0 | 100% |
 | P6 | 5 | 0 | 5 | 0 | 0% |
 | P7 | 5 | 4 | 1 | 0 | 80% |
 | P8 | 16 | 16 | 0 | 0 | 100% |
-| **Total** | **105** | **83** | **22** | **0** | **79%** |
+| **Total** | **105** | **85** | **20** | **0** | **81%** |
 
 ---
 

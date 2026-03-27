@@ -153,7 +153,7 @@ const ForumEditPage = () => {
    * 处理标签变化（自动添加 #）
    */
   const handleTagsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let value = e.target.value;
+    const value = e.target.value;
     const tagsArray = value.split(/\s+/).filter(Boolean);
     const formattedTags = tagsArray
       .map((tag) => tag.startsWith('#') ? tag : `#${tag}`)

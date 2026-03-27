@@ -130,7 +130,7 @@ function extractTags(content: string): string[] {
       if (regex.test(content) && !tags.includes(keyword)) {
         tags.push(keyword);
       }
-    } catch (e) {
+    } catch {
       // 如果正则表达式创建失败，使用简单的字符串包含检查
       if (content.toLowerCase().includes(keyword.toLowerCase()) && !tags.includes(keyword)) {
         tags.push(keyword);
@@ -359,7 +359,7 @@ export async function parseWordFile(file: File): Promise<ParsedDocument> {
             content = String(content || '');
 
             // 将HTML标签转换为Markdown格式
-            let markdownContent = convertHtmlToMarkdown(content);
+            const markdownContent = convertHtmlToMarkdown(content);
 
             const title = extractTitle(markdownContent, file.name);
             const subtitle = extractSubtitle(markdownContent, title);

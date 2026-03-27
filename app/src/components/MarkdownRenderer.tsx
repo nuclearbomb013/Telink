@@ -1,6 +1,7 @@
 /**
  * Markdown 渲染组件
  * 支持语法高亮和优雅的排版
+ * 包含 XSS 保护 (P2-29)
  */
 
 import { useEffect, useRef, useMemo } from 'react';
@@ -11,6 +12,34 @@ import 'highlight.js/styles/atom-one-dark.css';
 interface MarkdownRendererProps {
   content: string;
   className?: string;
+}
+
+/**
+ * Escape HTML to prevent XSS
+ */
+function escapeHtml(unsafe: string): string {
+  return unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+/**
+ * Sanitize HTML to prevent XSS attacks (P2-29)
+ * Removes script tags and dangerous attributes
+ */
+function sanitizeHtml(html: string): string {
+  // Remove script tags
+  let sanitized = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+  // Remove on* event handlers
+  sanitized = sanitized.replace(/\s*on\w+\s*=\s*["'][^"']*["']/gi, '');
+  // Remove javascript: URLs
+  sanitized = sanitized.replace(/javascript:/gi, '');
+  // Remove data: URLs in href/src (except images)
+  sanitized = sanitized.replace(/(href|src)\s*=\s*["']data:(?!image\/)[^"']*["']/gi, '');
+  return sanitized;
 }
 
 /**
@@ -51,7 +80,7 @@ function renderMarkdown(content: any): string {
         try {
           const validLanguage = hljs.getLanguage(language) ? language : 'text';
           return hljs.highlight(code, { language: validLanguage }).value;
-        } catch (e) {
+        } catch {
           return hljs.highlightAuto(code).value;
         }
       }
@@ -59,23 +88,12 @@ function renderMarkdown(content: any): string {
 
     // 使用marked解析Markdown
     const result = marked.parse(content);
-    return result as string;
+    // P2-29: Sanitize HTML to prevent XSS attacks
+    return sanitizeHtml(result as string);
   } catch (error) {
     console.error('Markdown render error:', error);
     return `<p class="text-red-500">渲染失败：${error instanceof Error ? escapeHtml(error.message) : '未知错误'}</p><pre class="whitespace-pre-wrap font-mono text-sm">${escapeHtml(String(content))}</pre>`;
   }
-}
-
-/**
- * Escape HTML to prevent XSS
- */
-function escapeHtml(unsafe: string): string {
-  return unsafe
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
 }
 
 const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className = '' }) => {

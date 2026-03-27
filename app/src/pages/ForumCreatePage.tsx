@@ -97,7 +97,7 @@ const ForumCreatePage = () => {
    * 处理标签变化（自动添加 #）
    */
   const handleTagsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let value = e.target.value;
+    const value = e.target.value;
     // 自动添加 # 前缀
     const tagsArray = value.split(/\s+/).filter(Boolean);
     const formattedTags = tagsArray

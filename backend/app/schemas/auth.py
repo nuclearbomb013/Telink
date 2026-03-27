@@ -58,14 +58,11 @@ class RegisterCredentials(BaseModel):
     @field_validator('password')
     @classmethod
     def validate_password(cls, v):
-        types = sum([
-            bool(re.search(r'[a-z]', v)),
-            bool(re.search(r'[A-Z]', v)),
-            bool(re.search(r'\d', v)),
-            bool(re.search(r'[!@#$%^&*(),.?":{}|<>]', v))
-        ])
-        if types < 2:
-            raise ValueError('Password must contain at least 2 character types')
+        # P2-25: Use centralized password validation
+        from app.core.security import PasswordManager
+        is_valid, error_msg = PasswordManager.validate_password_strength(v)
+        if not is_valid:
+            raise ValueError(error_msg)
         return v
 
     @field_validator('avatar')
