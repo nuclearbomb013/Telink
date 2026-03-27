@@ -470,6 +470,9 @@ test: pytest tests/ -v
 | 2026-03-27 | P8-95 | Add reply_to_id existence validation and merge duplicate queries | - |
 | 2026-03-27 | P8-96 | Update all child reply authors' comment_count on top-level delete | - |
 | 2026-03-27 | P8-97 | Add expires_at filter to unread-count endpoint | - |
+| 2026-03-27 | P8-99 | Batch load tags/replies to fix N+1 query performance issue | - |
+| 2026-03-27 | P8-100 | Add replies field to Comment type and recursive mapping | - |
+| 2026-03-27 | P8-101 | Use API returned likes count for comment like UI update | - |
 
 ---
 
@@ -485,8 +488,8 @@ test: pytest tests/ -v
 | P5 | 6 | 6 | 0 | 0 | 100% |
 | P6 | 5 | 0 | 5 | 0 | 0% |
 | P7 | 5 | 4 | 1 | 0 | 80% |
-| P8 | 16 | 13 | 3 | 0 | 81% |
-| **Total** | **105** | **80** | **25** | **0** | **76%** |
+| P8 | 16 | 16 | 0 | 0 | 100% |
+| **Total** | **105** | **83** | **22** | **0** | **79%** |
 
 ---
 
@@ -579,9 +582,9 @@ Phase 10 (Warnings):  P6-78~82
 | P8-96 | `[x]` | Deleting top-level comment decrements only parent author counter, not all deleted reply authors | `backend/app/api/v1/comments.py:390-413` | High (user stats drift) |
 | P8-97 | `[x]` | Expired filter missing in `/notifications/unread-count` endpoint | `backend/app/api/v1/notifications.py:289-295` | Medium (badge inconsistency) |
 | P8-98 | `[x]` | Missing enum validation for post category and notification type | `backend/app/schemas/post.py:28`, `backend/app/schemas/notification.py:25` | Medium (invalid domain values accepted) |
-| P8-99 | `[ ]` | N+1 queries in posts/tags and comments/replies loading | `backend/app/api/v1/forum.py:143-145`, `backend/app/api/v1/comments.py:80-82` | Medium (performance degradation) |
-| P8-100 | `[ ]` | Reply threading broken in UI (replies dropped/flattened) | `app/src/services/comment.service.ts:29-42,70`, `app/src/pages/ForumPostPage.tsx:194,454` | High (incorrect discussion structure) |
-| P8-101 | `[ ]` | Comment like UI updates only `+1` regardless toggle direction | `app/src/pages/ForumPostPage.tsx:222` | Medium (UI/state mismatch) |
+| P8-99 | `[x]` | N+1 queries in posts/tags and comments/replies loading | `backend/app/api/v1/forum.py:143-145`, `backend/app/api/v1/comments.py:80-82` | Medium (performance degradation) |
+| P8-100 | `[x]` | Reply threading broken in UI (replies dropped/flattened) | `app/src/services/comment.service.ts:29-42,70`, `app/src/pages/ForumPostPage.tsx:194,454` | High (incorrect discussion structure) |
+| P8-101 | `[x]` | Comment like UI updates only `+1` regardless toggle direction | `app/src/pages/ForumPostPage.tsx:222` | Medium (UI/state mismatch) |
 | P8-102 | `[x]` | Moderator cannot see pin/lock controls in UI (backend allows) | `app/src/pages/ForumPostPage.tsx:272` | Medium (role capability mismatch) |
 | P8-103 | `[x]` | Forum home stats hardcoded placeholder values | `app/src/sections/ForumSection.tsx:19,96-98` | Low (incorrect product metrics display) |
 

@@ -25,6 +25,7 @@ import {
 class CommentService {
   /**
    * 将 API Comment 转换为本地 Comment 格式
+   * 包含嵌套 replies 的递归映射 (P8-100)
    */
   private mapApiCommentToComment(apiComment: ApiComment): Comment {
     return {
@@ -40,6 +41,8 @@ class CommentService {
       replyToName: apiComment.replyToName,
       createdAt: apiComment.createdAt,
       updatedAt: apiComment.updatedAt,
+      // P8-100: 递归映射嵌套回复
+      replies: apiComment.replies?.map((reply) => this.mapApiCommentToComment(reply)),
     };
   }
 
@@ -239,11 +242,12 @@ class CommentService {
 
   /**
    * 切换点赞状态
+   * 返回点赞状态和最新点赞数 (P8-101)
    */
   async toggleLike(
     commentId: number,
     _userId: number
-  ): Promise<CommentServiceResponse<{ liked: boolean }>> {
+  ): Promise<CommentServiceResponse<{ liked: boolean; likes: number }>> {
     try {
       const response = await commentApi.toggleLike(commentId);
 
@@ -257,7 +261,7 @@ class CommentService {
 
       return {
         success: true,
-        data: { liked: response.data.liked },
+        data: { liked: response.data.liked, likes: response.data.likes },
         timestamp: Date.now(),
       };
     } catch (error) {

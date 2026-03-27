@@ -18,6 +18,8 @@ export interface Comment {
   replyToName?: string;
   createdAt: number;
   updatedAt?: number;
+  /** 嵌套回复列表 (P8-100: 修复回复线程丢失问题) */
+  replies?: Comment[];
 }
 
 /**

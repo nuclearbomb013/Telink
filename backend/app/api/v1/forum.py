@@ -184,13 +184,23 @@ async def get_posts(
     result = await db.execute(query)
     posts = result.scalars().all()
 
+    # Batch load tags for all posts (P8-99: avoid N+1 queries)
+    post_ids = [post.id for post in posts]
+    tags_by_post: dict = {}
+    if post_ids:
+        tag_result = await db.execute(
+            select(PostTag).where(PostTag.post_id.in_(post_ids))
+        )
+        all_tags = tag_result.scalars().all()
+        # Group tags by post_id
+        for tag in all_tags:
+            if tag.post_id not in tags_by_post:
+                tags_by_post[tag.post_id] = []
+            tags_by_post[tag.post_id].append(tag.tag)
+
     # Get tags for each post
     post_list = []
     for post in posts:
-        # Get tags
-        tag_result = await db.execute(select(PostTag).where(PostTag.post_id == post.id))
-        post_tags = tag_result.scalars().all()
-
         post_list.append(PostListResponse(
             id=post.id,
             title=post.title,
@@ -201,7 +211,7 @@ async def get_posts(
             author_name=post.author_name,
             author_avatar=post.author_avatar,
             category=post.category,
-            tags=[t.tag for t in post_tags],
+            tags=tags_by_post.get(post.id, []),
             views=post.views,
             likes=post.likes,
             reply_count=post.reply_count,

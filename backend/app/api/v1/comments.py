@@ -76,18 +76,27 @@ async def get_comments(
     result = await db.execute(query)
     comments = result.scalars().all()
 
-    # Get replies for each comment
-    comment_list = []
-    for comment in comments:
-        # Get replies
+    # Batch load replies for all comments (P8-99: avoid N+1 queries)
+    comment_ids = [c.id for c in comments]
+    replies_by_parent: dict = {}
+    if comment_ids:
         reply_result = await db.execute(
             select(Comment).where(
-                Comment.parent_id == comment.id,
+                Comment.parent_id.in_(comment_ids),
                 Comment.is_deleted == 0
             ).order_by(Comment.created_at.asc())
         )
-        replies = reply_result.scalars().all()
+        all_replies = reply_result.scalars().all()
+        # Group replies by parent_id
+        for reply in all_replies:
+            if reply.parent_id not in replies_by_parent:
+                replies_by_parent[reply.parent_id] = []
+            replies_by_parent[reply.parent_id].append(reply)
 
+    # Get replies for each comment
+    comment_list = []
+    for comment in comments:
+        replies = replies_by_parent.get(comment.id, [])
         comment_list.append(CommentWithReplies(
             id=comment.id,
             post_id=comment.post_id,

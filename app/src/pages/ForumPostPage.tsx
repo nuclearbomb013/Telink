@@ -209,17 +209,19 @@ const ForumPostPage = () => {
 
   /**
    * 处理评论点赞
+   * 使用 API 返回的实际点赞数更新 UI (P8-101)
    */
   const handleCommentLike = async (commentId: number) => {
     if (!currentUser) return;
 
     const response = await commentService.toggleLike(commentId, currentUser.id);
-    if (response.success) {
-      // 使用函数式更新来避免闭包引用过期状态
+    if (response.success && response.data) {
+      // P8-101: 使用 API 返回的实际点赞数，避免 UI 状态不一致
+      const { likes } = response.data;
       setComments(prevComments =>
         prevComments.map((c) =>
           c.id === commentId
-            ? { ...c, likes: c.likes + 1 } // 由于toggleLike服务端已处理状态，我们只需简单增加
+            ? { ...c, likes }
             : c
         )
       );
