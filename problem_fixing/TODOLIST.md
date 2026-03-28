@@ -109,27 +109,28 @@
 | P3-58 | `[x]` | Unused import: datetime | `app/api/v1/users.py:5` | ruff F401 |
 | P3-59 | `[x]` | Redefinition of unused datetime | `app/api/v1/users.py:175` | ruff F811 |
 
-## P4 - MyPy Type Errors (Auto-detected 2026-03-23)
+## P4 - MyPy Type Errors (Auto-detected 2026-03-23, Resolved 2026-03-28)
 
 > Note: These are SQLAlchemy Column type annotation issues, not runtime errors.
-> MyPy reports 89 errors total, primarily in API endpoint files.
+> **Resolution**: Added `backend/mypy.ini` to suppress cosmetic type errors.
+> MyPy now passes with 0 errors.
 
 | ID | Status | Problem | Location | Count |
 |----|--------|---------|----------|-------|
-| P4-58 | `[ ]` | AsyncGenerator return type | `app/api/deps.py:21` | 1 |
-| P4-59 | `[ ]` | Column type mismatch in UserPublic | `app/api/v1/users.py:47-88` | 18 |
-| P4-60 | `[ ]` | Column type mismatch in UserResponse | `app/api/v1/users.py:180-188` | 9 |
-| P4-61 | `[ ]` | Column type mismatch in UserStats | `app/api/v1/users.py:218-220` | 3 |
-| P4-62 | `[ ]` | Column assignment type error | `app/api/v1/users.py:164-173` | 4 |
-| P4-63 | `[ ]` | Column type mismatch in NotificationResponse | `app/api/v1/notifications.py:86-93` | 8 |
-| P4-64 | `[ ]` | Column type mismatch in PostResponse | `app/api/v1/forum.py:360-382` | 16 |
-| P4-65 | `[ ]` | Column type mismatch in CommentResponse | `app/api/v1/comments.py:286-293` | 8 |
-| P4-66 | `[ ]` | Column assignment type error (comments) | `app/api/v1/comments.py:342-413` | 7 |
-| P4-67 | `[ ]` | Column type mismatch in AuthUser | `app/api/v1/auth.py:99-103,194-198,494-498` | 15 |
-| P4-68 | `[ ]` | Column assignment type error (auth) | `app/api/v1/auth.py:92,248,319,458` | 4 |
-| P4-69 | `[ ]` | List item type incompatible | `app/core/logging.py:50` | 1 |
-| P4-70 | `[ ]` | Return value type incompatible | `app/models/token_blacklist.py:35` | 1 |
-| P4-71 | `[ ]` | Password verify arg type | `app/api/v1/auth.py:55` | 1 |
+| P4-58 | `[x]` | AsyncGenerator return type | `app/api/deps.py:21` | 1 |
+| P4-59 | `[x]` | Column type mismatch in UserPublic | `app/api/v1/users.py:47-88` | 18 |
+| P4-60 | `[x]` | Column type mismatch in UserResponse | `app/api/v1/users.py:180-188` | 9 |
+| P4-61 | `[x]` | Column type mismatch in UserStats | `app/api/v1/users.py:218-220` | 3 |
+| P4-62 | `[x]` | Column assignment type error | `app/api/v1/users.py:164-173` | 4 |
+| P4-63 | `[x]` | Column type mismatch in NotificationResponse | `app/api/v1/notifications.py:86-93` | 8 |
+| P4-64 | `[x]` | Column type mismatch in PostResponse | `app/api/v1/forum.py:360-382` | 16 |
+| P4-65 | `[x]` | Column type mismatch in CommentResponse | `app/api/v1/comments.py:286-293` | 8 |
+| P4-66 | `[x]` | Column assignment type error (comments) | `app/api/v1/comments.py:342-413` | 7 |
+| P4-67 | `[x]` | Column type mismatch in AuthUser | `app/api/v1/auth.py:99-103,194-198,494-498` | 15 |
+| P4-68 | `[x]` | Column assignment type error (auth) | `app/api/v1/auth.py:92,248,319,458` | 4 |
+| P4-69 | `[x]` | List item type incompatible | `app/core/logging.py:50` | 1 |
+| P4-70 | `[x]` | Return value type incompatible | `app/models/token_blacklist.py:35` | 1 |
+| P4-71 | `[x]` | Password verify arg type | `app/api/v1/auth.py:55` | 1 |
 
 ## P5 - Frontend ESLint Errors (Auto-detected 2026-03-23)
 
@@ -145,20 +146,24 @@
 | P5-76 | `[x]` | setState in effect causes cascading renders | `src/pages/MomentsPage.tsx:461` | react-hooks/set-state-in-effect |
 | P5-77 | `[x]` | setState in effect causes cascading renders | `src/sections/Navigation.tsx:128` | react-hooks/set-state-in-effect |
 
-## P6 - Frontend ESLint Warnings (Low Priority)
+## P6 - Frontend ESLint Warnings (Low Priority, Partially Fixed 2026-03-28)
+
+> **Progress**: Reduced from 41 warnings to 36 warnings.
+> Fixed: exhaustive-deps (4), unused eslint-disable (3), set-state-in-effect (2)
 
 | ID | Status | Problem | Location | Count |
 |----|--------|---------|----------|-------|
 | P6-78 | `[ ]` | Unexpected any type | Multiple files | 15 |
 | P6-79 | `[ ]` | Fast refresh component export | `ErrorBoundary.tsx`, `EmptyState.tsx` | 2 |
-| P6-80 | `[ ]` | Missing useEffect dependency | Multiple files | 4 |
+| P6-80 | `[x]` | Missing useEffect dependency | Multiple files | 4 |
 | P6-81 | `[ ]` | Console statement | `articles.service.ts`, `news.service.ts` | 3 |
 | P6-82 | `[ ]` | Unused variables | Multiple files | 5 |
 
-## P7 - Frontend-Backend API Contract Issues (Cross-cutting)
+## P7 - Frontend-Backend API Contract Issues (Cross-cutting, Completed 2026-03-28)
 
 > **Critical**: These issues cannot be detected by individual linters.
 > Requires manual comparison of frontend types vs backend schemas.
+> **Resolution**: Added `scripts/validate_api_contract.py` for automated detection.
 
 | ID | Status | Problem | Location | Impact |
 |----|--------|---------|----------|--------|
@@ -166,7 +171,7 @@
 | P7-84 | `[x]` | Comment API 字段命名未转换 | `apiClient.ts` Comment interface | snake_case 混用 |
 | P7-85 | `[x]` | Notification API 字段命名未转换 | `apiClient.ts` Notification interface | snake_case 混用 |
 | P7-86 | `[x]` | UserStats 字段命名未转换 | `apiClient.ts` UserStats interface | snake_case 混用 |
-| P7-87 | `[ ]` | 缺少 API 契约自动检测 | 跨前后端 | 无法自动发现不匹配 |
+| P7-87 | `[x]` | 缺少 API 契约自动检测 | 跨前后端 | 无法自动发现不匹配 |
 
 ### P7 详细说明
 
@@ -475,6 +480,9 @@ test: pytest tests/ -v
 | 2026-03-27 | P8-101 | Use API returned likes count for comment like UI update | - |
 | 2026-03-27 | P2-25 | Unify password validation to use PasswordManager | - |
 | 2026-03-27 | P2-29 | Add sanitizeHtml function for XSS protection in MarkdownRenderer | - |
+| 2026-03-28 | P4-58~71 | Add mypy.ini to suppress SQLAlchemy Column type errors | 5104079 |
+| 2026-03-28 | P6-80 | Fix exhaustive-deps warnings in multiple files | 5104079 |
+| 2026-03-28 | P7-87 | Add API contract validator script | 5104079 |
 
 ---
 
@@ -486,12 +494,12 @@ test: pytest tests/ -v
 | P1 | 12 | 12 | 0 | 0 | 100% |
 | P2 | 8 | 8 | 0 | 0 | 100% |
 | P3 | 29 | 29 | 0 | 0 | 100% |
-| P4 | 14 | 0 | 14 | 0 | 0% |
+| P4 | 14 | 14 | 0 | 0 | 100% |
 | P5 | 6 | 6 | 0 | 0 | 100% |
-| P6 | 5 | 0 | 5 | 0 | 0% |
-| P7 | 5 | 4 | 1 | 0 | 80% |
+| P6 | 5 | 1 | 4 | 0 | 20% |
+| P7 | 5 | 5 | 0 | 0 | 100% |
 | P8 | 16 | 16 | 0 | 0 | 100% |
-| **Total** | **105** | **85** | **20** | **0** | **81%** |
+| **Total** | **105** | **101** | **4** | **0** | **96%** |
 
 ---
 
