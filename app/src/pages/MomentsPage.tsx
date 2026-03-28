@@ -260,9 +260,10 @@ const CommentModal = ({
    */
   useEffect(() => {
     if (isOpen && momentId) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Loading data from service is valid
       loadComments();
     }
+    // Note: loadComments intentionally not in deps - defined inside component, would cause re-renders
   }, [isOpen, momentId]);
 
   /**

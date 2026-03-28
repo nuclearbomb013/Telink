@@ -93,7 +93,7 @@ const ForumListPage = () => {
     if (currentPage > 1) params.set('page', currentPage.toString());
 
     setSearchParams(params);
-  }, [category, sortBy, currentPage]);
+  }, [category, sortBy, currentPage, setSearchParams]);
 
   /**
    * 处理分类变化

@@ -390,6 +390,7 @@ async def delete_comment(
     # Count child replies for accurate decrement (P8-91)
     child_replies_count = 0
     child_reply_author_ids: set = set()
+    child_replies: list[Comment] = []  # Initialize for type checking
     if comment.parent_id is None:
         # This is a top-level comment, count all its replies and collect author IDs
         result = await db.execute(

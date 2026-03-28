@@ -75,7 +75,7 @@ export function useAuth(): UseAuthReturn {
   useEffect(() => {
     // 初始加载
     const user = authService.getCurrentUser();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Initial sync from localStorage is valid
     setState({
       user,
       isAuthenticated: authService.isAuthenticated(),
@@ -87,7 +87,6 @@ export function useAuth(): UseAuthReturn {
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'techink_current_user' || e.key === 'techink_auth_token') {
         const currentUser = authService.getCurrentUser();
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setState((prev) => ({
           ...prev,
           user: currentUser,

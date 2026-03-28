@@ -4,7 +4,7 @@
  * 负责计算和更新热点资讯的状态
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import { newsService } from '@/services/news.service';
 
 interface HotspotTrackerProps {
@@ -18,8 +18,8 @@ const HotspotTracker: React.FC<HotspotTrackerProps> = ({
 }) => {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // 更新热点数据
-  const updateHotspots = async () => {
+  // 更新热点数据 - 使用 useCallback 确保稳定性
+  const updateHotspots = useCallback(async () => {
     try {
       const response = await newsService.getHotNews(10);
       if (response.success && response.data) {
@@ -32,7 +32,7 @@ const HotspotTracker: React.FC<HotspotTrackerProps> = ({
     } catch (error) {
       console.error('更新热点数据失败:', error);
     }
-  };
+  }, [onHotspotsUpdate]);
 
   // 初始化和定期更新
   useEffect(() => {
@@ -48,7 +48,7 @@ const HotspotTracker: React.FC<HotspotTrackerProps> = ({
         clearInterval(intervalRef.current);
       }
     };
-  }, []);
+  }, [updateHotspots]);
 
   return <>{children}</>;
 };

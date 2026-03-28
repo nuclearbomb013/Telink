@@ -70,12 +70,11 @@ export function useNotifications(): UseNotificationsReturn {
    */
   useEffect(() => {
     // 初始加载
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Initial sync from service is valid
     setState(notificationService.getState());
 
     // 订阅变化
     const unsubscribe = notificationService.subscribe(() => {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setState(notificationService.getState());
     });
 
