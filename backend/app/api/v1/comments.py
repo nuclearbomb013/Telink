@@ -2,7 +2,6 @@
 Comment API Endpoints
 """
 
-from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +12,7 @@ from app.api.deps import get_db, get_current_active_user
 from app.models.user import User, UserRole
 from app.models.post import Post
 from app.models.comment import Comment, CommentLike
+from app.models.base import utcnow_naive
 from app.schemas import (
     ServiceResponse,
     CommentCreate,
@@ -182,6 +182,37 @@ async def create_comment(
             }
         )
 
+    # Initialize derived_reply_to_name before conditional block (P9-104 fix)
+    # This prevents UnboundLocalError when parent_id is None (top-level comment)
+    derived_reply_to_name = None
+
+    # P13-151: Validate reply_to_id for both top-level and nested comments
+    # Even when parent_id is null (top-level), reply_to_id should be validated
+    if comment_data.reply_to_id:
+        reply_to_result = await db.execute(
+            select(Comment).where(Comment.id == comment_data.reply_to_id)
+        )
+        reply_to_comment = reply_to_result.scalar_one_or_none()
+        # P8-95: reply_to_id must exist and belong to same post
+        if not reply_to_comment:
+            return ServiceResponse(
+                success=False,
+                error={
+                    "code": "BAD_REQUEST",
+                    "message": "Reply target comment not found"
+                }
+            )
+        if reply_to_comment.post_id != comment_data.post_id:
+            return ServiceResponse(
+                success=False,
+                error={
+                    "code": "BAD_REQUEST",
+                    "message": "Reply target must belong to the same post"
+                }
+            )
+        # Derive reply_to_name from DB to prevent spoofing
+        derived_reply_to_name = reply_to_comment.author_name
+
     # If replying, verify parent comment exists and belongs to same post
     if comment_data.parent_id:
         result = await db.execute(
@@ -207,34 +238,7 @@ async def create_comment(
                     "message": "Parent comment must belong to the same post"
                 }
             )
-
-        # Verify reply_to_id also belongs to same post if provided
-        # Also derive reply_to_name from DB to prevent spoofing
-        derived_reply_to_name = None
-        if comment_data.reply_to_id:
-            reply_to_result = await db.execute(
-                select(Comment).where(Comment.id == comment_data.reply_to_id)
-            )
-            reply_to_comment = reply_to_result.scalar_one_or_none()
-            # P8-95: reply_to_id must exist and belong to same post
-            if not reply_to_comment:
-                return ServiceResponse(
-                    success=False,
-                    error={
-                        "code": "BAD_REQUEST",
-                        "message": "Reply target comment not found"
-                    }
-                )
-            if reply_to_comment.post_id != comment_data.post_id:
-                return ServiceResponse(
-                    success=False,
-                    error={
-                        "code": "BAD_REQUEST",
-                        "message": "Reply target must belong to the same post"
-                    }
-                )
-            # Derive reply_to_name from DB to prevent spoofing
-            derived_reply_to_name = reply_to_comment.author_name
+        # Note: reply_to_id validation moved outside this block (P13-151 fix)
 
     # Create comment
     comment = Comment(
@@ -322,7 +326,7 @@ async def update_comment(
 
     # Update content
     comment.content = comment_data.content
-    comment.updated_at = datetime.now(timezone.utc)
+    comment.updated_at = utcnow_naive()
 
     await db.commit()
     await db.refresh(comment)
@@ -411,7 +415,7 @@ async def delete_comment(
     # Soft delete (mark as deleted)
     comment.is_deleted = 1
     comment.content = "[已删除]"
-    comment.updated_at = datetime.now(timezone.utc)
+    comment.updated_at = utcnow_naive()
 
     # Soft delete all child replies (P8-91)
     if child_replies_count > 0:
@@ -420,13 +424,16 @@ async def delete_comment(
             sql_update(Comment).where(
                 Comment.parent_id == comment.id,
                 Comment.is_deleted == 0
-            ).values(is_deleted=1, content="[已删除]", updated_at=datetime.now(timezone.utc))
+            ).values(is_deleted=1, content="[已删除]", updated_at=utcnow_naive())
         )
 
-    # Update comment author's comment count (P8-96: always update the owner)
+    # Update comment author's comment count (P9-105 fix: only count own comments)
+    # Author loses 1 (top-level) + their own child replies
     if comment_author:
-        total_deleted = 1 + child_replies_count
-        comment_author.comment_count = max(0, comment_author.comment_count - total_deleted)
+        # Count only the author's own child replies
+        author_own_child_count = sum(1 for reply in child_replies if reply.author_id == comment.author_id)
+        total_deleted_for_author = 1 + author_own_child_count
+        comment_author.comment_count = max(0, comment_author.comment_count - total_deleted_for_author)
 
     # Update child reply authors' comment counts (P8-96)
     # Each child reply author loses 1 from their comment_count

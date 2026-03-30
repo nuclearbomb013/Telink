@@ -16,7 +16,6 @@ class TestSecretKey:
 
         with patch.dict(os.environ, {"SECRET_KEY": test_key}, clear=False):
             # Re-import to get new settings
-            import importlib
             import sys
 
             # Clear cached module
@@ -34,7 +33,6 @@ class TestSecretKey:
             # Remove SECRET_KEY if present
             os.environ.pop("SECRET_KEY", None)
 
-            import importlib
             import sys
 
             # Clear cached module
@@ -53,7 +51,6 @@ class TestSecretKey:
         with patch.dict(os.environ, {"ENVIRONMENT": "development"}, clear=False):
             os.environ.pop("SECRET_KEY", None)
 
-            import importlib
             import sys
 
             if "app.config" in sys.modules:

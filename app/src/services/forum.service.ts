@@ -316,7 +316,7 @@ class ForumService {
   async toggleLike(
     postId: number,
     _userId: number
-  ): Promise<ForumServiceResponse<{ liked: boolean }>> {
+  ): Promise<ForumServiceResponse<{ liked: boolean; likes: number }>> {
     try {
       const response = await forumApi.toggleLike(postId);
 
@@ -328,9 +328,10 @@ class ForumService {
         };
       }
 
+      // P10-114: Return full response with likes count
       return {
         success: true,
-        data: { liked: response.data.liked },
+        data: { liked: response.data.liked, likes: response.data.likes },
         timestamp: Date.now(),
       };
     } catch (error) {
@@ -348,7 +349,7 @@ class ForumService {
   /**
    * 切换置顶状态
    */
-  async togglePin(postId: number): Promise<ForumServiceResponse<ForumPost>> {
+  async togglePin(postId: number): Promise<ForumServiceResponse<{ isPinned: boolean }>> {
     try {
       const response = await forumApi.togglePin(postId);
 
@@ -360,9 +361,13 @@ class ForumService {
         };
       }
 
-      // 返回更新后的帖子
-      const postResponse = await this.getPostById(postId);
-      return postResponse;
+      // P9-113: Return the toggle response directly instead of fetching the post
+      // This prevents incrementing the view count during pin/lock operations
+      return {
+        success: true,
+        data: response.data,
+        timestamp: Date.now(),
+      };
     } catch (error) {
       return {
         success: false,
@@ -378,7 +383,7 @@ class ForumService {
   /**
    * 切换锁定状态
    */
-  async toggleLock(postId: number): Promise<ForumServiceResponse<ForumPost>> {
+  async toggleLock(postId: number): Promise<ForumServiceResponse<{ isLocked: boolean }>> {
     try {
       const response = await forumApi.toggleLock(postId);
 
@@ -390,9 +395,13 @@ class ForumService {
         };
       }
 
-      // 返回更新后的帖子
-      const postResponse = await this.getPostById(postId);
-      return postResponse;
+      // P9-113: Return the toggle response directly instead of fetching the post
+      // This prevents incrementing the view count during pin/lock operations
+      return {
+        success: true,
+        data: response.data,
+        timestamp: Date.now(),
+      };
     } catch (error) {
       return {
         success: false,

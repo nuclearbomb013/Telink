@@ -14,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from app.api.deps import get_db, get_current_active_user, require_roles
 from app.models.user import User, UserRole
 from app.models.post import Post, PostTag, PostLike
+from app.models.base import utcnow_naive
 from app.schemas import (
     ServiceResponse,
     PostCreate,
@@ -530,7 +531,7 @@ async def update_post(
     if post_data.category:
         post.category = post_data.category
 
-    post.updated_at = datetime.now(timezone.utc)
+    post.updated_at = utcnow_naive()
 
     # Update tags
     if post_data.tags is not None:
@@ -755,7 +756,7 @@ async def toggle_pin(
         )
 
     post.is_pinned = not post.is_pinned
-    post.updated_at = datetime.now(timezone.utc)
+    post.updated_at = utcnow_naive()
     await db.commit()
 
     return ServiceResponse(
@@ -787,7 +788,7 @@ async def toggle_lock(
         )
 
     post.is_locked = not post.is_locked
-    post.updated_at = datetime.now(timezone.utc)
+    post.updated_at = utcnow_naive()
     await db.commit()
 
     return ServiceResponse(

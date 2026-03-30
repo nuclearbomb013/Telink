@@ -15,6 +15,7 @@ from app.db.session import init_db, close_db
 from app.api.v1.router import api_router
 from app.core.logging import setup_logging, get_logger
 from app.core.rate_limit import RateLimitMiddleware
+from app.core.security_headers import SecurityHeadersMiddleware
 
 # Initialize logging
 setup_logging()
@@ -67,6 +68,10 @@ def create_app() -> FastAPI:
     # Add rate limiting middleware (must be after CORS for proper handling)
     app.add_middleware(RateLimitMiddleware)
     logger.info("rate_limit_middleware_enabled")
+
+    # Add security headers middleware
+    app.add_middleware(SecurityHeadersMiddleware)
+    logger.info("security_headers_middleware_enabled")
 
     # Global exception handlers
     @app.exception_handler(HTTPException)
@@ -138,15 +143,9 @@ def create_app() -> FastAPI:
     # Request logging middleware
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
-        # OPTIONS preflight 直接放行，并设置 CORS 头
-        if request.method == "OPTIONS":
-            from fastapi.responses import Response
-            response = Response(status_code=200)
-            response.headers["Access-Control-Allow-Origin"] = request.headers.get("origin", "*")
-            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
-            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Accept, Origin, X-Requested-With"
-            response.headers["Access-Control-Allow-Credentials"] = "true"
-            return response
+        # P9-109: Remove custom OPTIONS handler that bypassed CORS whitelist
+        # Let CORSMiddleware handle OPTIONS preflight with proper origin validation
+        # The CORSMiddleware is already configured with allowed origins above
 
         request_id = str(uuid.uuid4())[:8]
         start_time = time.time()

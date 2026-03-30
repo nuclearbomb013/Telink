@@ -104,9 +104,7 @@ const NewsTimeline: React.FC<NewsTimelineProps> = ({ className = '' }) => {
   // 点击项目处理
   const handleItemClick = useCallback((item: NewsItem) => {
     setActiveItemId(item.id);
-
-    // 如果需要，可以在这里添加导航逻辑
-    console.log('点击资讯:', item);
+    // Navigation or other click handling can be added here
   }, []);
 
   // 处理侧边栏滚轮事件，防止滚动影响整个页面

@@ -13,9 +13,10 @@ import { formatDate } from '@/lib/dateUtils';
 import { forumService } from '@/services/forum.service';
 import { commentService } from '@/services/comment.service';
 import { userService } from '@/services/user.service';
+import { useAuth } from '@/hooks/useAuth';
 import type { ForumPost } from '@/services/forum.types';
 import type { Comment } from '@/services/comment.types';
-import type { User, CurrentUser } from '@/services/user.types';
+import type { User } from '@/services/user.types';
 import { FORUM_CATEGORY_LABELS, FORUM_CATEGORY_ICONS } from '@/services/forum.types';
 import UserAvatar from '@/components/Forum/UserAvatar';
 import VoteButton from '@/components/Forum/VoteButton';
@@ -31,15 +32,15 @@ const ForumPostPage = () => {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
 
+  // 用户状态 - 使用全局认证状态
+  const { user: currentUser } = useAuth();
+
   // 状态
   const [post, setPost] = useState<ForumPost | null>(null);
   const [author, setAuthor] = useState<User | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-
-  // 用户状态
-  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [hasLiked, setHasLiked] = useState(false);
 
   // 回复状态
@@ -56,10 +57,6 @@ const ForumPostPage = () => {
 
       setLoading(true);
 
-      // 获取当前用户
-      const user = userService.getCurrentUser();
-      setCurrentUser(user);
-
       // 加载帖子
       const postResponse = await forumService.getPostBySlug(slug);
       if (postResponse.success && postResponse.data) {
@@ -72,9 +69,9 @@ const ForumPostPage = () => {
           setAuthor(authorResponse.data);
         }
 
-        // 检查是否已点赞
-        if (user) {
-          const key = `techink_forum_likes_${user.id}`;
+        // 检查是否已点赞 - 使用全局 currentUser
+        if (currentUser) {
+          const key = `techink_forum_likes_${currentUser.id}`;
           const likedPosts = JSON.parse(localStorage.getItem(key) || '[]');
           setHasLiked(likedPosts.includes(postData.id));
         }
@@ -90,7 +87,8 @@ const ForumPostPage = () => {
     };
 
     loadData();
-  }, [slug]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Only re-fetch when slug or user ID changes, not entire user object
+  }, [slug, currentUser?.id]);
 
   /**
    * 聚焦回复输入框
@@ -109,8 +107,11 @@ const ForumPostPage = () => {
 
     const response = await forumService.toggleLike(post.id, currentUser.id);
     if (response.success && response.data) {
+      // P9-111: Use server returned values for consistent state
       setHasLiked(response.data.liked);
-      setPost({ ...post, likes: hasLiked ? post.likes - 1 : post.likes + 1 });
+      // Use server returned likes count if available, otherwise calculate
+      const newLikes = response.data.likes ?? (response.data.liked ? post.likes + 1 : post.likes - 1);
+      setPost({ ...post, likes: newLikes });
     }
   };
 
@@ -153,8 +154,9 @@ const ForumPostPage = () => {
     if (!post) return;
 
     const response = await forumService.togglePin(post.id);
+    // P9-113: Update local state instead of fetching the post
     if (response.success && response.data) {
-      setPost(response.data);
+      setPost({ ...post, isPinned: response.data.isPinned });
     }
   };
 
@@ -165,8 +167,9 @@ const ForumPostPage = () => {
     if (!post) return;
 
     const response = await forumService.toggleLock(post.id);
+    // P9-113: Update local state instead of fetching the post
     if (response.success && response.data) {
-      setPost(response.data);
+      setPost({ ...post, isLocked: response.data.isLocked });
     }
   };
 
@@ -190,8 +193,21 @@ const ForumPostPage = () => {
     });
 
     if (response.success && response.data) {
-      // 更新评论列表
-      setComments([...comments, response.data]);
+      // P9-112: Add new comment to correct location in thread
+      // If it's a reply, add to parent's replies array; otherwise add to root
+      if (response.data.parentId) {
+        // Find parent comment and add to its replies
+        setComments(prevComments =>
+          prevComments.map((c) =>
+            c.id === response.data!.parentId
+              ? { ...c, replies: [...(c.replies || []), response.data!] }
+              : c
+          )
+        );
+      } else {
+        // Top-level comment, add to root
+        setComments([...comments, response.data]);
+      }
 
       // 更新帖子回复数
       await forumService.incrementReplyCount(post.id);
@@ -449,11 +465,12 @@ const ForumPostPage = () => {
             </div>
           ) : (
             <div className="divide-y divide-brand-border/30">
-              {comments.map((comment) => (
+              {/* P9-112: Only render top-level comments (parentId is null/undefined) */}
+              {comments.filter(c => !c.parentId).map((comment) => (
                 <ForumComment
                   key={comment.id}
                   comment={comment}
-                  replies={comment.parentId ? [] : comments.filter(c => c.parentId === comment.id)}
+                  replies={comment.replies || comments.filter(c => c.parentId === comment.id)}
                   onLike={handleCommentLike}
                   onReply={(c) => setReplyingTo({ id: c.id, name: c.authorName })}
                   onDelete={handleCommentDelete}
@@ -508,8 +525,13 @@ const ForumPostPage = () => {
                 </div>
               </>
             ) : (
-              <div className="text-center py-8 text-brand-dark-gray/60">
-                请登录后发表评论
+              <div className="text-center py-8">
+                <p className="text-brand-dark-gray/60 mb-4">请登录后发表评论</p>
+                <Link to="/login">
+                  <Button className="bg-brand-text text-white hover:bg-brand-dark-gray">
+                    登录
+                  </Button>
+                </Link>
               </div>
             )}
           </div>

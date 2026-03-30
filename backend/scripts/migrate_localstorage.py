@@ -24,6 +24,7 @@ import json
 import asyncio
 import sys
 import os
+import secrets
 from datetime import datetime
 
 # Add parent directory to path
@@ -31,11 +32,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy import select
 from app.db.session import async_session_maker, init_db
-from app.models.user import User, RefreshToken
-from app.models.post import Post, PostTag, PostLike
-from app.models.comment import Comment, CommentLike
+from app.models.user import User
+from app.models.post import Post, PostTag
+from app.models.comment import Comment
 from app.models.notification import Notification
-from app.core.security import TokenManager, PasswordManager
+from app.core.security import PasswordManager
 
 
 def timestamp_to_datetime(ts):
@@ -71,13 +72,19 @@ async def migrate_users(db, users_data: list) -> dict:
             continue
 
         # Create user
+        # P13-154: Generate random password if not provided, avoid weak default passwords
+        password = user_data.get('password')
+        if not password:
+            # Generate a secure random password (16 characters)
+            password = secrets.token_urlsafe(12)
+            print(f"  WARNING: Generated random password for user '{user_data['username']}': {password}")
+            print(f"           Please notify the user to change their password!")
+
         user = User(
             id=user_data['id'],
             username=user_data['username'],
             email=user_data.get('email', f"{user_data['username']}@techink.com"),
-            password_hash=PasswordManager.hash_password(
-                user_data.get('password', 'default123')
-            ),
+            password_hash=PasswordManager.hash_password(password),
             avatar=user_data.get('avatar'),
             bio=user_data.get('bio'),
             role=user_data.get('role', 'user'),
@@ -97,6 +104,20 @@ async def migrate_users(db, users_data: list) -> dict:
     return id_mapping
 
 
+def normalize_category(category: str) -> str:
+    """Normalize category to valid value."""
+    valid_categories = {'announce', 'general', 'help', 'showcase', 'jobs'}
+    category_map = {
+        'discussion': 'general',  # discussion -> general (综合讨论)
+    }
+
+    if category in valid_categories:
+        return category
+
+    # Try mapping invalid categories to valid ones
+    return category_map.get(category, 'general')
+
+
 async def migrate_posts(db, posts_data: list, user_id_mapping: dict) -> dict:
     """
     Migrate posts and return ID mapping.
@@ -112,6 +133,12 @@ async def migrate_posts(db, posts_data: list, user_id_mapping: dict) -> dict:
         result = await db.execute(select(User).where(User.id == author_id))
         author = result.scalar_one_or_none()
 
+        # Normalize category to valid value
+        raw_category = post_data.get('category', 'general')
+        normalized_category = normalize_category(raw_category)
+        if raw_category != normalized_category:
+            print(f"  Normalized category for post {post_data.get('id')}: '{raw_category}' -> '{normalized_category}'")
+
         # Create post
         post = Post(
             id=post_data['id'],
@@ -123,7 +150,7 @@ async def migrate_posts(db, posts_data: list, user_id_mapping: dict) -> dict:
             author_id=author_id,
             author_name=author.username if author else post_data.get('authorName', 'Unknown'),
             author_avatar=author.avatar if author else post_data.get('authorAvatar'),
-            category=post_data.get('category', 'general'),
+            category=normalized_category,
             views=post_data.get('views', 0),
             likes=post_data.get('likes', 0),
             reply_count=post_data.get('replyCount', 0),

@@ -4,7 +4,6 @@ Test Configuration
 
 import pytest
 import asyncio
-from typing import Generator
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 

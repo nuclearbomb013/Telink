@@ -4,13 +4,13 @@
  * 创建新帖子的表单页面
  */
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, Eye, EyeOff, Tags, Image as ImageIcon, Link as LinkIcon } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { forumService } from '@/services/forum.service';
-import { userService } from '@/services/user.service';
+import { useAuth } from '@/hooks/useAuth';
 import type { ForumCategory, CreateForumPostData } from '@/services/forum.types';
 
 import { Button } from '@/components/ui/button';
@@ -36,8 +36,8 @@ const categories: Array<{ value: ForumCategory; label: string; icon: string; des
 const ForumCreatePage = () => {
   const navigate = useNavigate();
 
-  // 用户状态
-  const [currentUser, setCurrentUser] = useState<{ id: number; username: string; avatar?: string } | null>(null);
+  // 用户状态 - 使用全局认证状态
+  const { user: currentUser, isAuthenticated } = useAuth();
 
   // 表单状态
   const [title, setTitle] = useState('');
@@ -54,20 +54,6 @@ const ForumCreatePage = () => {
   // 图片上传模式：'upload' 或 'url'
   const [imageMode, setImageMode] = useState<'upload' | 'url'>('upload');
   const [imageUrl, setImageUrl] = useState('');
-
-  /**
-   * 检查登录状态
-   */
-  useEffect(() => {
-    const user = userService.getCurrentUser();
-    if (!user) {
-      // 未登录，跳转到登录页或首页
-      navigate('/');
-    } else {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setCurrentUser(user);
-    }
-  }, [navigate]);
 
   /**
    * 验证表单
@@ -161,7 +147,8 @@ const ForumCreatePage = () => {
     }
   };
 
-  if (!currentUser) {
+  // 未登录时返回 null（ProtectedRoute 会处理重定向）
+  if (!isAuthenticated) {
     return null;
   }
 

@@ -11,7 +11,7 @@ import { Plus, RefreshCw, Users, ChevronUp, Image, X, Send } from 'lucide-react'
 import { cn } from '@/lib/utils';
 
 import { useMoments } from '@/hooks/useMoments';
-import { userService } from '@/services/user.service';
+import { useAuth } from '@/hooks/useAuth';
 import { momentService } from '@/services/moment.service';
 import type { CurrentUser } from '@/services/user.types';
 import type { MomentImage, MomentComment } from '@/services/moment.types';
@@ -260,10 +260,9 @@ const CommentModal = ({
    */
   useEffect(() => {
     if (isOpen && momentId) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- Loading data from service is valid
       loadComments();
     }
-    // Note: loadComments intentionally not in deps - defined inside component, would cause re-renders
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadComments intentionally excluded; defined inside component, would cause re-renders
   }, [isOpen, momentId]);
 
   /**
@@ -419,8 +418,8 @@ const CommentModal = ({
 const MomentsPage = () => {
   const navigate = useNavigate();
 
-  // 用户状态 - 使用惰性初始化避免 useEffect 中的 setState
-  const [currentUser] = useState<CurrentUser | null>(() => userService.getCurrentUser());
+  // 用户状态 - 使用全局认证状态
+  const { user: currentUser } = useAuth();
 
   // 排序和筛选
   const [sortBy, setSortBy] = useState<SortOption>('newest');

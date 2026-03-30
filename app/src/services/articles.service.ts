@@ -83,17 +83,17 @@ class ArticleService {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed)) {
           this.articles = parsed;
-          console.log(`从本地存储加载 ${this.articles.length} 篇文章`);
+          // Articles loaded from local storage
           return;
         }
       }
-    } catch (error) {
-      console.warn('本地存储数据解析失败，使用初始数据', error);
+    } catch {
+      // Failed to parse local storage data, using initial data
     }
 
     // 使用配置的初始数据
     this.articles = this.transformConfigArticles(latestArticlesConfig.articles);
-    console.log(`使用初始配置数据 ${this.articles.length} 篇文章`);
+    // Using initial config data
 
     // 保存到本地存储
     this.saveArticles();

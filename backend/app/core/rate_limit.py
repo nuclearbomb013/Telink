@@ -5,14 +5,25 @@ Provides rate limiting functionality for API endpoints.
 Uses in-memory storage with TTL for rate limit tracking.
 """
 
+import os
 import time
 from collections import defaultdict
 from threading import Lock
-from typing import Callable, Optional
+from typing import Callable, Optional, Set
 from functools import wraps
 
 from fastapi import Request, HTTPException, status
 from fastapi.responses import JSONResponse
+
+
+# P9-108: Trusted proxy IPs for X-Forwarded-For validation
+# These IPs are trusted to set X-Forwarded-For header correctly
+# In production, configure this via environment variable
+TRUSTED_PROXY_IPS: Set[str] = set(
+    os.environ.get("TRUSTED_PROXIES", "").split(",")
+    if os.environ.get("TRUSTED_PROXIES")
+    else []  # Empty set means no trusted proxies (use direct IP only)
+)
 
 
 class RateLimiter:
@@ -102,18 +113,27 @@ def get_client_identifier(request: Request) -> str:
     """
     Get unique identifier for rate limiting.
 
-    Uses X-Forwarded-For header if available (behind proxy),
+    P9-108: Only trust X-Forwarded-For from trusted proxies to prevent spoofing.
+    Uses X-Forwarded-For header only if request comes from a trusted proxy,
     otherwise falls back to client IP.
     """
-    # Check for forwarded header (when behind reverse proxy)
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        # Take first IP in chain (original client)
-        return forwarded.split(",")[0].strip()
+    # Get the direct client IP (the immediate connection)
+    direct_client_ip = request.client.host if request.client else None
 
-    # Fall back to direct client IP
-    if request.client:
-        return request.client.host
+    # P9-108: Only use X-Forwarded-For if request comes from trusted proxy
+    # This prevents spoofing by malicious clients setting fake headers
+    if direct_client_ip and direct_client_ip in TRUSTED_PROXY_IPS:
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            # Take first IP in chain (original client)
+            # Validate format: should be a valid IP address
+            client_ip = forwarded.split(",")[0].strip()
+            if client_ip:
+                return client_ip
+
+    # Fall back to direct client IP (no trusted proxy or no forwarded header)
+    if direct_client_ip:
+        return direct_client_ip
 
     return "unknown"
 
@@ -208,7 +228,7 @@ def rate_limit(
 
     def decorator(func: Callable) -> Callable:
         @wraps(func)
-        async def wrapper(*args, request: Request = None, **kwargs):
+        async def wrapper(*args, request: Optional[Request] = None, **kwargs):
             # Try to get request from args or kwargs
             if request is None:
                 for arg in args:

@@ -295,8 +295,7 @@ class NewsService {
    * 模拟热点数据更新
    */
   simulateHotspotUpdate(): void {
-    // 实际应用中这里会调用API来更新热点数据
-    console.log('模拟热点数据更新...');
+    // In production, this would call an API to update hotspot data
   }
 }
 

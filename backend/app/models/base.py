@@ -2,11 +2,22 @@
 Base Model with common fields
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, DateTime
 from sqlalchemy.orm import declared_attr
 
 from app.db.session import Base
+
+
+def utcnow_naive() -> datetime:
+    """
+    Return current UTC time as a naive datetime (no timezone info).
+
+    This is required for PostgreSQL TIMESTAMP WITHOUT TIME ZONE columns.
+    Using timezone-aware datetime with such columns causes:
+    "can't subtract offset-naive and offset-aware datetimes" error.
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class BaseModel(Base):
@@ -15,8 +26,8 @@ class BaseModel(Base):
     __abstract__ = True
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=True)
+    created_at = Column(DateTime, default=utcnow_naive, nullable=False)
+    updated_at = Column(DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=True)
 
     @declared_attr
     def __tablename__(cls):

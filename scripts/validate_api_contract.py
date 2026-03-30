@@ -64,6 +64,16 @@ TYPE_MAPPING = {
 # Python types that map to TypeScript optional
 OPTIONAL_TYPES = {'Optional', 'None', 'undefined', 'null'}
 
+# P10-115: Special field mappings for known transformations
+# These fields are intentionally renamed during API response transformation
+FIELD_MAPPINGS = {
+    # Backend field -> Frontend field (when the naming differs from standard snake_to_camel)
+    ('UserPublic', 'created_at'): 'joinedAt',
+    ('UserResponse', 'created_at'): 'joinedAt',
+    # UserResponse has email but UserPublic doesn't - this is intentional
+    ('UserResponse', 'email'): None,  # None means field is intentionally excluded from frontend
+}
+
 
 def extract_pydantic_fields(file_path: Path) -> dict[str, dict[str, FieldInfo]]:
     """Extract field names and types from Pydantic schema files"""
@@ -225,8 +235,18 @@ def compare_schemas(
 
         # Check each backend field
         for be_field_name, be_field_info in backend_fields.items():
-            # Convert snake_case to camelCase for comparison
-            expected_camel = snake_to_camel(be_field_name)
+            # P10-115: Check for special field mappings first
+            mapping_key = (backend_name, be_field_name)
+            if mapping_key in FIELD_MAPPINGS:
+                expected_frontend_name = FIELD_MAPPINGS[mapping_key]
+                # None means field is intentionally excluded from frontend
+                if expected_frontend_name is None:
+                    continue
+                # Otherwise use the mapped name
+                expected_camel = expected_frontend_name
+            else:
+                # Convert snake_case to camelCase for comparison
+                expected_camel = snake_to_camel(be_field_name)
 
             # Check if field exists in frontend with proper naming
             if expected_camel not in frontend_fields:

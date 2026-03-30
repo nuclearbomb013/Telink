@@ -11,6 +11,7 @@ import hashlib
 from app.api.deps import get_db, get_current_active_user
 from app.models.user import User, RefreshToken, PasswordResetToken, UserRole
 from app.models.token_blacklist import TokenBlacklist
+from app.models.base import utcnow_naive
 from app.schemas import (
     ServiceResponse,
     LoginCredentials,
@@ -48,7 +49,9 @@ async def login(
 
     # Timing attack prevention: always verify password even if user doesn't exist
     # This ensures consistent response time regardless of user existence
-    dummy_hash = "$2b$12$dummyhashdummyhashdummyhashdummyhashdu"  # Fake hash for timing
+    # P9-107: Use a valid bcrypt hash to ensure full comparison is performed
+    # This is a pre-computed hash for "dummy_password" that bcrypt can properly verify
+    dummy_hash = "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.VTt.qW8uM/qnNa"
     password_hash = user.password_hash if user else dummy_hash
 
     # Verify password (constant-time comparison)
@@ -89,7 +92,7 @@ async def login(
     db.add(db_token)
 
     # Update last active
-    user.updated_at = datetime.now(timezone.utc)
+    user.updated_at = utcnow_naive()
     await db.commit()
 
     return ServiceResponse(
@@ -143,28 +146,20 @@ async def register(
             }
         )
 
-    # Check if username or email exists (use generic message to prevent enumeration)
+    # Check if username or email exists (P9-106: use generic message to prevent enumeration)
     result = await db.execute(select(User).where(User.username == credentials.username))
     username_exists = result.scalar_one_or_none() is not None
 
     result = await db.execute(select(User).where(User.email == credentials.email))
     email_exists = result.scalar_one_or_none() is not None
 
-    if username_exists:
+    # Return generic error to prevent user enumeration (P9-106)
+    if username_exists or email_exists:
         return ServiceResponse(
             success=False,
             error={
-                "code": "USERNAME_EXISTS",
-                "message": "该用户名已被使用"
-            }
-        )
-
-    if email_exists:
-        return ServiceResponse(
-            success=False,
-            error={
-                "code": "EMAIL_EXISTS",
-                "message": "该邮箱已被注册"
+                "code": "REGISTRATION_FAILED",
+                "message": "注册失败，请尝试不同的用户名或邮箱"
             }
         )
 

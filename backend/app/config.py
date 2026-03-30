@@ -4,42 +4,13 @@ Application Configuration
 
 import os
 import secrets
+import warnings
 from typing import List
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 
-
-# Module-level cached secret key for development
-_cached_secret_key: str = ""
-
-
-def get_secret_key() -> str:
-    """
-    Get SECRET_KEY from environment or generate a secure random key.
-
-    In production, SECRET_KEY MUST be set via environment variable.
-    In development, a random key is generated once and cached.
-    """
-    global _cached_secret_key
-
-    # Check environment variable first
-    key = os.environ.get("SECRET_KEY")
-    if key:
-        return key
-
-    # Return cached key if available
-    if _cached_secret_key:
-        return _cached_secret_key
-
-    # Development fallback: generate random key once
-    if os.environ.get("ENVIRONMENT", "development") == "production":
-        raise ValueError(
-            "SECRET_KEY environment variable must be set in production. "
-            "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
-        )
-
-    _cached_secret_key = secrets.token_urlsafe(32)
-    return _cached_secret_key
+# Module-level cache for development fallback key
+_dev_secret_key: str = ""
 
 
 class Settings(BaseSettings):
@@ -59,33 +30,72 @@ class Settings(BaseSettings):
     DB_POOL_RECYCLE: int = 1800
 
     # Security
-    SECRET_KEY: str = ""  # Set via property to use get_secret_key()
+    # IMPORTANT: SECRET_KEY must be set in .env file for persistent tokens
+    # Pydantic will load this from .env automatically
+    SECRET_KEY: str = ""  # Loaded from .env via Pydantic
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
     # CORS
-    CORS_ORIGINS: str = '["http://localhost:5173","http://127.0.0.1:5173","http://localhost:3000","http://127.0.0.1:3000"]'
+    CORS_ORIGINS: str = '["*"]'  # 开发环境允许所有来源
     CORS_METHODS: str = '["*"]'
     CORS_HEADERS: str = '["*"]'
 
     @property
     def secret_key(self) -> str:
-        """Get the secret key (cached at module level)."""
-        return get_secret_key()
+        """
+        Get the secret key for JWT signing.
+
+        Priority:
+        1. SECRET_KEY from .env (loaded by Pydantic into self.SECRET_KEY)
+        2. os.environ["SECRET_KEY"] (if set externally)
+        3. Generate random key for development (cached at module level)
+
+        WARNING: In production, SECRET_KEY MUST be set in .env or environment.
+        Without a persistent key, all tokens become invalid on server restart.
+        """
+        # First check Pydantic-loaded value from .env
+        if self.SECRET_KEY:
+            return self.SECRET_KEY
+
+        # Check system environment variable (for Docker/K8s deployment)
+        key = os.environ.get("SECRET_KEY")
+        if key:
+            return key
+
+        # Production environment: must have a configured key
+        if self.ENVIRONMENT == "production":
+            raise ValueError(
+                "SECRET_KEY must be set in .env or environment variable in production. "
+                "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+            )
+
+        # Development fallback: use cached random key
+        global _dev_secret_key
+        if _dev_secret_key:
+            return _dev_secret_key
+
+        # Generate random key for development (persists for process lifetime)
+        _dev_secret_key = secrets.token_urlsafe(32)
+        warnings.warn(
+            "SECRET_KEY not set in .env - using random key for development. "
+            "Tokens will be invalid after server restart. "
+            "Add SECRET_KEY to backend/.env for persistent tokens.",
+            UserWarning
+        )
+        return _dev_secret_key
 
     @property
     def cors_origins_list(self) -> List[str]:
         """Parse CORS_ORIGINS string to list."""
         import json
         try:
-            return json.loads(self.CORS_ORIGINS)
+            origins = json.loads(self.CORS_ORIGINS)
+            # 如果是 ["*"]，返回 ["*"] 让所有来源都允许
+            return origins
         except Exception:
-            return [
-                "http://localhost:5173",
-                "http://127.0.0.1:5173",
-                "http://10.29.138.55:5173",
-            ]
+            return ["*"]  # 默认允许所有来源
 
     @property
     def cors_methods_list(self) -> List[str]:
@@ -105,9 +115,11 @@ class Settings(BaseSettings):
         except Exception:
             return ["Content-Type", "Authorization"]
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    # P10-116: Use Pydantic v2 SettingsConfigDict instead of class Config
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8"
+    )
 
 
 @lru_cache()

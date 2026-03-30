@@ -110,7 +110,7 @@ export const DeveloperShowcaseSection: React.FC = () => {
   useEffect(() => {
     fetchDevelopers(0); // Reset to first page when filters change
     setCurrentPage(0);
-    // Note: fetchDevelopers intentionally not in deps - defined inside component, would cause re-renders
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchDevelopers intentionally excluded; defined inside component, would cause re-renders
   }, [currentFilters, currentSort]);
 
   // Perform search function

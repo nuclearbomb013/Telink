@@ -2,16 +2,17 @@
  * useAuth - 认证状态管理 Hook
  *
  * 提供用户认证状态、登录、登出等功能的统一接口
+ * 注意：此 hook 是 AuthContext 的便捷封装，确保全局状态一致性
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback } from 'react';
+import { useAuthContext } from '@/context/AuthContext';
 import { authService } from '@/services/auth.service';
 import type {
   LoginCredentials,
   RegisterCredentials,
   ResetPasswordCredentials,
   CurrentUser,
-  AuthState,
 } from '@/services/auth.types';
 
 /**
@@ -48,6 +49,8 @@ interface UseAuthReturn {
 /**
  * useAuth Hook
  *
+ * 统一使用 AuthContext 作为唯一状态来源
+ *
  * @example
  * ```tsx
  * const { user, isAuthenticated, login, logout } = useAuth();
@@ -60,85 +63,23 @@ interface UseAuthReturn {
  * ```
  */
 export function useAuth(): UseAuthReturn {
-  // 状态
-  const [state, setState] = useState<AuthState>({
-    user: null,
-    isAuthenticated: false,
-    isLoading: true,
-    error: null,
-  });
+  // 从 AuthContext 获取状态，确保全局一致
+  const { currentUser, isAuthenticated, login: contextLogin, logout: contextLogout, refreshAuthStatus } = useAuthContext();
 
   /**
-   * 初始化时加载用户
-   * 这是有效的初始化模式，在组件挂载时同步认证状态
-   */
-  useEffect(() => {
-    // 初始加载
-    const user = authService.getCurrentUser();
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Initial sync from localStorage is valid
-    setState({
-      user,
-      isAuthenticated: authService.isAuthenticated(),
-      isLoading: false,
-      error: null,
-    });
-
-    // 监听存储变化（多标签页同步）
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'techink_current_user' || e.key === 'techink_auth_token') {
-        const currentUser = authService.getCurrentUser();
-        setState((prev) => ({
-          ...prev,
-          user: currentUser,
-          isAuthenticated: authService.isAuthenticated(),
-        }));
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-    };
-  }, []);
-
-  /**
-   * 登录
+   * 登录 - 使用 AuthContext 的登录方法
    */
   const login = useCallback(
     async (credentials: LoginCredentials): Promise<{ success: boolean; message?: string }> => {
-      setState((prev) => ({ ...prev, isLoading: true, error: null }));
-
       try {
-        const loginResponse = await authService.login(credentials);
-        if (loginResponse.success && loginResponse.data) {
-          setState({
-            user: loginResponse.data.user,
-            isAuthenticated: true,
-            isLoading: false,
-            error: null,
-          });
-          return { success: true, message: '登录成功' };
-        } else {
-          const errorMessage = loginResponse.error?.message || '登录失败';
-          setState((prev) => ({
-            ...prev,
-            isLoading: false,
-            error: errorMessage,
-          }));
-          return { success: false, message: errorMessage };
-        }
+        await contextLogin(credentials);
+        return { success: true, message: '登录成功' };
       } catch (error: any) {
         const errorMessage = error.message || '登录失败';
-        setState((prev) => ({
-          ...prev,
-          isLoading: false,
-          error: errorMessage,
-        }));
         return { success: false, message: errorMessage };
       }
     },
-    []
+    [contextLogin]
   );
 
   /**
@@ -146,67 +87,44 @@ export function useAuth(): UseAuthReturn {
    */
   const register = useCallback(
     async (credentials: RegisterCredentials): Promise<{ success: boolean; message?: string }> => {
-      setState((prev) => ({ ...prev, isLoading: true, error: null }));
-
-      const response = await authService.register(credentials);
-
-      if (response.success && response.data) {
-        setState({
-          user: response.data.user,
-          isAuthenticated: true,
-          isLoading: false,
-          error: null,
-        });
-        return { success: true, message: '注册成功' };
-      } else {
-        const errorMessage = response.error?.message || '注册失败';
-        setState((prev) => ({
-          ...prev,
-          isLoading: false,
-          error: errorMessage,
-        }));
+      try {
+        const response = await authService.register(credentials);
+        if (response.success && response.data) {
+          // 注册成功后自动登录
+          await contextLogin({
+            username: credentials.username,
+            password: credentials.password,
+          });
+          return { success: true, message: '注册成功' };
+        } else {
+          const errorMessage = response.error?.message || '注册失败';
+          return { success: false, message: errorMessage };
+        }
+      } catch (error: any) {
+        const errorMessage = error.message || '注册失败';
         return { success: false, message: errorMessage };
       }
     },
-    []
+    [contextLogin]
   );
 
   /**
-   * 登出
+   * 登出 - 使用 AuthContext 的登出方法
    */
   const logout = useCallback(() => {
-    authService.logout(); // This will now trigger the complete logout sequence through the service
-    setState({
-      user: null,
-      isAuthenticated: false,
-      isLoading: false,
-      error: null,
-    });
-  }, []);
+    contextLogout();
+  }, [contextLogout]);
 
   /**
    * 发送重置密码邮件
    */
   const sendPasswordReset = useCallback(
     async (email: string): Promise<{ success: boolean; message?: string }> => {
-      setState((prev) => ({ ...prev, isLoading: true, error: null }));
-
       const response = await authService.sendPasswordResetEmail(email);
-
       if (response.success) {
-        setState((prev) => ({
-          ...prev,
-          isLoading: false,
-          error: null,
-        }));
         return { success: true, message: '重置邮件已发送，请检查邮箱' };
       } else {
         const errorMessage = response.error?.message || '发送失败';
-        setState((prev) => ({
-          ...prev,
-          isLoading: false,
-          error: errorMessage,
-        }));
         return { success: false, message: errorMessage };
       }
     },
@@ -220,24 +138,11 @@ export function useAuth(): UseAuthReturn {
     async (
       credentials: ResetPasswordCredentials
     ): Promise<{ success: boolean; message?: string }> => {
-      setState((prev) => ({ ...prev, isLoading: true, error: null }));
-
       const response = await authService.resetPassword(credentials);
-
       if (response.success) {
-        setState((prev) => ({
-          ...prev,
-          isLoading: false,
-          error: null,
-        }));
         return { success: true, message: '密码重置成功' };
       } else {
         const errorMessage = response.error?.message || '重置失败';
-        setState((prev) => ({
-          ...prev,
-          isLoading: false,
-          error: errorMessage,
-        }));
         return { success: false, message: errorMessage };
       }
     },
@@ -245,31 +150,25 @@ export function useAuth(): UseAuthReturn {
   );
 
   /**
-   * 清除错误
+   * 清除错误 - 暂时返回空实现，因为 AuthContext 没有错误状态
    */
   const clearError = useCallback(() => {
-    setState((prev) => ({ ...prev, error: null }));
+    // AuthContext 目前没有暴露错误状态
   }, []);
 
   /**
    * 重新加载用户
    */
   const reloadUser = useCallback(() => {
-    const user = authService.getCurrentUser();
-    setState({
-      user,
-      isAuthenticated: authService.isAuthenticated(),
-      isLoading: false,
-      error: null,
-    });
-  }, []);
+    refreshAuthStatus();
+  }, [refreshAuthStatus]);
 
   return {
     // 状态
-    user: state.user,
-    isAuthenticated: state.isAuthenticated,
-    isLoading: state.isLoading,
-    error: state.error,
+    user: currentUser,
+    isAuthenticated,
+    isLoading: false, // AuthContext 已经处理了加载状态
+    error: null, // AuthContext 目前没有暴露错误状态
 
     // 方法
     login,

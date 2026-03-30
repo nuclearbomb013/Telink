@@ -117,12 +117,11 @@ const ForumEditPage = () => {
       navigate('/login', { state: { from: { pathname: `/forum/edit/${id}` } } });
       return;
     }
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Initial sync from userService is valid
     setCurrentUser(user);
 
     // 加载帖子数据（传入 user.id 避免闭包问题）
     loadPost(parseInt(id || '0', 10), user.id);
-    // Note: loadPost intentionally not in deps - it receives user.id as argument to avoid stale closure
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadPost intentionally excluded; receives user.id as argument to avoid stale closure
   }, [id, navigate]);
 
   /**

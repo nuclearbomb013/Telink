@@ -31,6 +31,7 @@ import DeveloperShowcaseSection from '@/sections/DeveloperShowcaseSection';
 import MomentsPage from '@/pages/MomentsPage';
 import MessagesPage from '@/pages/MessagesPage';
 import ChatPage from '@/pages/ChatPage';
+import { syncCacheWithDb } from '@/lib/cache';
 
 /**
  * Main App Component
@@ -66,6 +67,20 @@ function App() {
         metaDesc.setAttribute('content', siteConfig.description);
       }
     }
+  }, []);
+
+  // Sync cache with database version on startup
+  // This clears localStorage cache if backend database was reset
+  useEffect(() => {
+    syncCacheWithDb(true) // keepAuth = true, preserve login state
+      .then((cleared) => {
+        if (cleared) {
+          console.log('[App] Cache cleared due to database reset');
+        }
+      })
+      .catch((err) => {
+        console.warn('[App] Cache sync check failed:', err);
+      });
   }, []);
 
   // Handle resize with debounced ScrollTrigger refresh

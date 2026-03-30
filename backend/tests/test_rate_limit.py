@@ -4,7 +4,7 @@ Rate Limiting Tests
 
 import pytest
 import time
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
@@ -121,14 +121,38 @@ class TestClientIdentifier:
         assert identifier == "192.168.1.1"
 
     def test_forwarded_for_header(self):
-        """Test getting client IP from X-Forwarded-For."""
+        """Test getting client IP from X-Forwarded-For only from trusted proxy."""
+        # P9-108: X-Forwarded-For should be ignored when not from trusted proxy
         request = Mock(spec=Request)
         request.headers = {"X-Forwarded-For": "10.0.0.1, 192.168.1.1"}
         request.client = Mock()
-        request.client.host = "192.168.1.1"
+        request.client.host = "192.168.1.1"  # Not in trusted proxies
 
         identifier = get_client_identifier(request)
-        assert identifier == "10.0.0.1"
+        # Should use direct IP since not from trusted proxy
+        assert identifier == "192.168.1.1"
+
+    def test_forwarded_for_from_trusted_proxy(self):
+        """Test X-Forwarded-For is used when request comes from trusted proxy."""
+        from app.core.rate_limit import TRUSTED_PROXY_IPS, get_client_identifier
+
+        # Temporarily add trusted proxy
+        original_proxies = TRUSTED_PROXY_IPS.copy()
+        TRUSTED_PROXY_IPS.add("192.168.1.100")
+
+        try:
+            request = Mock(spec=Request)
+            request.headers = {"X-Forwarded-For": "10.0.0.1, 192.168.1.100"}
+            request.client = Mock()
+            request.client.host = "192.168.1.100"  # This is the trusted proxy
+
+            identifier = get_client_identifier(request)
+            # Should use X-Forwarded-For since from trusted proxy
+            assert identifier == "10.0.0.1"
+        finally:
+            # Restore original
+            TRUSTED_PROXY_IPS.clear()
+            TRUSTED_PROXY_IPS.update(original_proxies)
 
     def test_no_client(self):
         """Test fallback when no client info available."""

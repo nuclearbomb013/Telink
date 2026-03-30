@@ -83,10 +83,18 @@ export default defineConfig(({ mode }) => {
     // Development server configuration
     server: {
       port: 5173,
-      host: true,
+      host: true, // 监听所有局域网 IP
       // Enable HMR overlay
       hmr: {
         overlay: true,
+      },
+      // 反向代理配置 - 解决 CORS 问题
+      proxy: {
+        '/api': {
+          target: 'http://127.0.0.1:8000',
+          changeOrigin: true,
+          secure: false,
+        },
       },
     },
 

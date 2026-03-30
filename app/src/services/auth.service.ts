@@ -197,14 +197,27 @@ class AuthService {
    */
   async login(credentials: LoginCredentials): Promise<AuthServiceResponse<AuthResponse>> {
     try {
-      // 验证输入
-      const usernameValidation = this.validateUsername(credentials.username);
-      if (!usernameValidation.isValid) {
-        return {
-          success: false,
-          error: { code: 'VALIDATION_ERROR', message: usernameValidation.error! },
-          timestamp: Date.now(),
-        };
+      // P9-110: Allow both username and email for login
+      // Detect if input is email or username and validate accordingly
+      const isEmail = credentials.username.includes('@');
+      if (isEmail) {
+        const emailValidation = this.validateEmail(credentials.username);
+        if (!emailValidation.isValid) {
+          return {
+            success: false,
+            error: { code: 'VALIDATION_ERROR', message: emailValidation.error! },
+            timestamp: Date.now(),
+          };
+        }
+      } else {
+        const usernameValidation = this.validateUsername(credentials.username);
+        if (!usernameValidation.isValid) {
+          return {
+            success: false,
+            error: { code: 'VALIDATION_ERROR', message: usernameValidation.error! },
+            timestamp: Date.now(),
+          };
+        }
       }
 
       if (!credentials.password) {

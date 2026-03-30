@@ -2,7 +2,6 @@
 User API Endpoints
 """
 
-from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +9,7 @@ from sqlalchemy import select
 
 from app.api.deps import get_db, get_current_user
 from app.models.user import User, UserRole
+from app.models.base import utcnow_naive
 from app.schemas import (
     ServiceResponse,
     UserResponse,
@@ -172,7 +172,7 @@ async def update_user(
     if update_data.bio is not None:
         user.bio = update_data.bio
 
-    user.updated_at = datetime.now(timezone.utc)
+    user.updated_at = utcnow_naive()
     await db.commit()
     await db.refresh(user)
 

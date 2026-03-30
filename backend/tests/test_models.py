@@ -2,7 +2,6 @@
 Test Models - P0-5 and P0-6: Unique Constraints
 """
 
-import pytest
 
 
 class TestPostLikeUnique:

@@ -2,7 +2,6 @@
 Tests for P0-4 and P0-10: JWT Token Management
 """
 
-import pytest
 from datetime import datetime, timezone, timedelta
 
 

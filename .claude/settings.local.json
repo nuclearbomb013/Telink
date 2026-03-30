@@ -52,7 +52,14 @@
       "Bash(E:/KIMI_web/.venv/Scripts/python.exe -m uvicorn:*)",
       "Bash(E:KIMI_web.venvScriptsruff.exe check:*)",
       "Bash(echo:*)",
-      "Bash(E:KIMI_web.venvScriptsbandit.exe -r E:KIMI_webbackendapp -f txt)"
+      "Bash(E:KIMI_web.venvScriptsbandit.exe -r E:KIMI_webbackendapp -f txt)",
+      "Bash(E:\\\\KIMI_web\\\\.venv\\\\Scripts\\\\ruff.exe:*)",
+      "Bash(E:KIMI_web.venvScriptsruff.exe:*)",
+      "Bash(E:KIMI_web.venvScriptsmypy.exe:*)",
+      "Bash(E:KIMI_web.venvScriptsbandit.exe:*)",
+      "Bash(E:KIMI_web.venvScriptspytest.exe:*)",
+      "Bash(npm --version)",
+      "Bash(cd:*)"
     ]
   }
 }

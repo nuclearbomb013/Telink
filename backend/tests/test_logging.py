@@ -2,8 +2,6 @@
 Tests for P1-20: Logging Configuration
 """
 
-import pytest
-import logging
 
 
 class TestLogging:
@@ -43,7 +41,7 @@ class TestLogging:
 
     def test_request_logger_context_manager(self):
         """Test RequestLogger context manager."""
-        from app.core.logging import RequestLogger, get_logger
+        from app.core.logging import RequestLogger
 
         # Should work as context manager
         with RequestLogger("req-123", "GET", "/test"):
