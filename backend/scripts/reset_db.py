@@ -8,6 +8,8 @@ Usage:
 Options:
     --keep-users    Keep user accounts, only clear posts/comments/notifications
     --no-seed       Clear data only, don't re-seed
+    --minimal       Empty forum mode: only admin account, no test data
+    -y, --force     Skip confirmation prompt
 """
 import json
 import asyncio
@@ -21,7 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy import text, select
 from app.db.session import async_session_maker, engine, Base, init_db
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.models.post import Post, PostTag
 from app.models.comment import Comment
 from app.models.notification import Notification
@@ -92,14 +94,13 @@ async def clear_all_data(keep_users: bool = False):
             result = await db.execute(text("DELETE FROM post_likes"))
             print(f"  Deleted {result.rowcount} post likes")
 
-            # 8. Post tags (depends on posts) - two possible table names
-            try:
-                result = await db.execute(text("DELETE FROM post_tags_table"))
-                print(f"  Deleted {result.rowcount} post tags (post_tags_table)")
-            except Exception:
-                # Fallback to post_tags if post_tags_table doesn't exist
-                result = await db.execute(text("DELETE FROM post_tags"))
-                print(f"  Deleted {result.rowcount} post tags (post_tags)")
+            # 8. Post tags (depends on posts) - two separate tables
+            # First: post_tags (Table-defined association table)
+            result = await db.execute(text("DELETE FROM post_tags"))
+            print(f"  Deleted {result.rowcount} post tags (post_tags)")
+            # Second: post_tags_table (PostTag model)
+            result = await db.execute(text("DELETE FROM post_tags_table"))
+            print(f"  Deleted {result.rowcount} post tags (post_tags_table)")
 
             # 9. Posts (depends on users)
             result = await db.execute(text("DELETE FROM posts"))
@@ -121,6 +122,40 @@ async def clear_all_data(keep_users: bool = False):
             raise
 
 
+async def seed_minimal_data():
+    """Seed minimal data for empty forum - only admin account."""
+    print("\nSeeding minimal data (empty forum mode)...")
+
+    async with async_session_maker() as db:
+        try:
+            # Only create admin account
+            result = await db.execute(select(User).where(User.username == "管理员"))
+            admin = result.scalars().first()
+
+            if not admin:
+                admin = User(
+                    username="管理员",
+                    email="admin@techink.com",
+                    password_hash=PasswordManager.hash_password("admin123"),
+                    bio="TechInk 论坛管理员",
+                    role=UserRole.ADMIN
+                )
+                db.add(admin)
+                await db.flush()
+                print("  Created admin user: 管理员")
+            else:
+                print("  Admin user already exists, skipping creation.")
+
+            await db.commit()
+            print("\nMinimal seed completed! Forum is now empty.")
+            print("  Login: 管理员 / admin123")
+
+        except Exception as e:
+            await db.rollback()
+            print(f"\nSeed failed: {e}")
+            raise
+
+
 async def seed_fresh_data():
     """Seed initial data after clearing, with idempotency checks."""
     print("\nSeeding fresh data...")
@@ -137,7 +172,7 @@ async def seed_fresh_data():
                     email="admin@techink.com",
                     password_hash=PasswordManager.hash_password("admin123"),
                     bio="TechInk 论坛管理员",
-                    role="admin"
+                    role=UserRole.ADMIN
                 )
                 db.add(admin)
                 await db.flush()
@@ -155,7 +190,7 @@ async def seed_fresh_data():
                     email="react@example.com",
                     password_hash=PasswordManager.hash_password("user123"),
                     bio="前端开发，React 重度用户",
-                    role="user"
+                    role=UserRole.USER
                 )
                 db.add(test_user)
                 await db.flush()
@@ -201,28 +236,36 @@ async def seed_fresh_data():
 async def main():
     parser = argparse.ArgumentParser(description="Reset database")
     parser.add_argument("--keep-users", action="store_true", help="Keep user accounts")
-    parser.add_argument("--no-seed", action="store_true", help="Don't re-seed data")
+    parser.add_argument("--no-seed", action="store_true", help="Clear data only, don't re-seed")
+    parser.add_argument("--minimal", action="store_true", help="Empty forum mode: only admin, no test data")
+    parser.add_argument("-y", "--force", action="store_true", help="Skip confirmation prompt")
     args = parser.parse_args()
 
-    # Confirm action
-    print("\n" + "!" * 50)
-    print("  WARNING: This will DELETE ALL DATA in the database!")
-    print("!" * 50)
+    # Confirm action (skip if --force)
+    if not args.force:
+        print("\n" + "!" * 50)
+        print("  WARNING: This will DELETE ALL DATA in the database!")
+        print("!" * 50)
 
-    if args.keep_users:
-        print("  (User accounts will be preserved)")
+        if args.keep_users:
+            print("  (User accounts will be preserved)")
+        if args.minimal:
+            print("  (Minimal mode: only admin account will be created)")
 
-    confirm = input("\nAre you sure? Type 'yes' to continue: ")
-    if confirm.lower() != "yes":
-        print("Cancelled.")
-        return
+        confirm = input("\nAre you sure? Type 'yes' to continue: ")
+        if confirm.lower() != "yes":
+            print("Cancelled.")
+            return
 
     # Clear data
     await clear_all_data(keep_users=args.keep_users)
 
-    # Re-seed if requested
+    # Re-seed based on mode
     if not args.no_seed:
-        await seed_fresh_data()
+        if args.minimal:
+            await seed_minimal_data()
+        else:
+            await seed_fresh_data()
 
     # Update database version (signals frontend to clear cache)
     print("\nUpdating database version...")
