@@ -172,6 +172,54 @@ class ApiClient {
   async delete<T>(endpoint: string): Promise<ServiceResponse<T>> {
     return this.request<T>(endpoint, { method: 'DELETE' });
   }
+
+  /**
+   * 上传文件 (multipart/form-data)
+   */
+  async uploadFile<T>(endpoint: string, file: File, fieldName = 'file'): Promise<ServiceResponse<T>> {
+    const url = `${this.baseUrl}${endpoint}`;
+
+    const formData = new FormData();
+    formData.append(fieldName, file);
+
+    const headers: Record<string, string> = {};
+    if (this.accessToken) {
+      headers['Authorization'] = `Bearer ${this.accessToken}`;
+    }
+    // Note: Don't set Content-Type for FormData - browser will set it automatically
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        return {
+          success: false,
+          error: data.error || {
+            code: 'HTTP_ERROR',
+            message: `HTTP Error: ${response.status}`,
+          },
+          timestamp: Date.now(),
+        };
+      }
+
+      return data;
+    } catch (error) {
+      return {
+        success: false,
+        error: {
+          code: 'NETWORK_ERROR',
+          message: error instanceof Error ? error.message : 'Network error',
+        },
+        timestamp: Date.now(),
+      };
+    }
+  }
 }
 
 // 导出单例实例
@@ -339,6 +387,10 @@ export const userApi = {
   getByUsername: async (username: string): Promise<ServiceResponse<UserPublic>> => {
     const response = await apiClient.get<UserPublicRaw>(`/users/username/${encodeURIComponent(username)}`);
     return mapResponse(response, transformUserPublic);
+  },
+
+  checkUsername: async (username: string): Promise<ServiceResponse<{ available: boolean; message: string }>> => {
+    return apiClient.get<{ available: boolean; message: string }>('/users/check-username', { username });
   },
 
   update: async (userId: number, data: Partial<UserPublic>): Promise<ServiceResponse<UserPublic>> => {
@@ -781,6 +833,56 @@ export const notificationApi = {
 
   getUnreadCount: () =>
     apiClient.get<{ count: number }>('/notifications/unread-count'),
+};
+
+// ==================== 上传 API ====================
+
+/**
+ * 上传响应数据
+ */
+export interface UploadResponse {
+  url: string;
+  filename: string;
+  size: number;
+  contentType: string;
+}
+
+/**
+ * 后端返回的上传响应（snake_case）
+ */
+interface UploadResponseRaw {
+  url: string;
+  filename: string;
+  size: number;
+  content_type: string;
+}
+
+export const uploadApi = {
+  /**
+   * 上传图片
+   */
+  uploadImage: async (file: File): Promise<ServiceResponse<UploadResponse>> => {
+    // Use public endpoint for testing (will require auth in production)
+    const response = await apiClient.uploadFile<UploadResponseRaw>('/upload/image-public', file);
+    if (response.success && response.data) {
+      return {
+        success: true,
+        data: {
+          url: response.data.url,
+          filename: response.data.filename,
+          size: response.data.size,
+          contentType: response.data.content_type,
+        },
+        timestamp: response.timestamp,
+      };
+    }
+    // Return error response with proper typing
+    return {
+      success: false,
+      error: response.error,
+      timestamp: response.timestamp,
+    };
+  },
 };
 
 export default apiClient;

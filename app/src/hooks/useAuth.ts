@@ -74,8 +74,8 @@ export function useAuth(): UseAuthReturn {
       try {
         await contextLogin(credentials);
         return { success: true, message: '登录成功' };
-      } catch (error: any) {
-        const errorMessage = error.message || '登录失败';
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : '登录失败';
         return { success: false, message: errorMessage };
       }
     },
@@ -100,8 +100,8 @@ export function useAuth(): UseAuthReturn {
           const errorMessage = response.error?.message || '注册失败';
           return { success: false, message: errorMessage };
         }
-      } catch (error: any) {
-        const errorMessage = error.message || '注册失败';
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : '注册失败';
         return { success: false, message: errorMessage };
       }
     },

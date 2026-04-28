@@ -102,7 +102,7 @@ Automated bug detection and testing skill. Runs static analysis, **API contract 
    **Frontend Tools**:
    ```bash
    cd E:\KIMI_web\app && npm --version
-   cd E:\KIMI_web\app && npm run lint --version
+   cd E:\KIMI_web\app && npx eslint --version
    ```
 
 3. **Initialize Detection Context**:
@@ -133,13 +133,15 @@ E:\KIMI_web\.venv\Scripts\ruff.exe check E:\KIMI_web\backend\app --output-format
 - SIM: flake8-simplify
 
 **Step 2: MyPy Type Checking**
+
+NOTE: Must run from `backend/` directory with `mypy.ini` to avoid 200+ false positives from SQLAlchemy Column types.
 ```bash
-E:\KIMI_web\.venv\Scripts\mypy.exe E:\KIMI_web\backend\app --ignore-missing-imports --no-error-summary
+cd E:\KIMI_web\backend && E:\KIMI_web\.venv\Scripts\mypy.exe .
 ```
 
 **Step 3: Bandit Security Scan**
 ```bash
-E:\KIMI_web\.venv\Scripts\bandit.exe -r E:\KIMI_web\backend\app -f json
+E:\KIMI_web\.venv\Scripts\bandit.exe -r E:\KIMI_web\backend\app -f txt
 ```
 
 **Security Issues Detected**:
@@ -154,7 +156,7 @@ E:\KIMI_web\.venv\Scripts\bandit.exe -r E:\KIMI_web\backend\app -f json
 
 **Step 1: ESLint**
 ```bash
-cd E:\KIMI_web\app && npm run lint -- --format json
+cd E:\KIMI_web\app && npm run lint
 ```
 
 **Categories Detected**:

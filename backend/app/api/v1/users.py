@@ -22,6 +22,61 @@ from app.core.security import validate_username
 router = APIRouter(prefix="/users", tags=["Users"])
 
 
+@router.get("/check-username", response_model=ServiceResponse[dict])
+async def check_username_availability(
+    username: str,
+    current_user: Optional[User] = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Check if username is available for use.
+
+    Validates format and checks uniqueness (excluding current user).
+    """
+    # Validate username format
+    is_valid, error_msg = validate_username(username)
+    if not is_valid:
+        return ServiceResponse(
+            success=True,
+            data={
+                "available": False,
+                "message": error_msg
+            }
+        )
+
+    # Check if username is taken (exclude current user)
+    result = await db.execute(
+        select(User).where(User.username == username)
+    )
+    existing_user = result.scalar_one_or_none()
+
+    if existing_user:
+        # If the existing user is the current user, username is available (they can keep it)
+        if current_user and existing_user.id == current_user.id:
+            return ServiceResponse(
+                success=True,
+                data={
+                    "available": True,
+                    "message": "This is your current username"
+                }
+            )
+        return ServiceResponse(
+            success=True,
+            data={
+                "available": False,
+                "message": "Username already taken"
+            }
+        )
+
+    return ServiceResponse(
+        success=True,
+        data={
+            "available": True,
+            "message": "Username is available"
+        }
+    )
+
+
 @router.get("/{user_id}", response_model=ServiceResponse[UserPublic])
 async def get_user(
     user_id: int,

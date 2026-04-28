@@ -116,8 +116,8 @@ export function useFollow({
       } else {
         setError(response.error?.message || '获取关注状态失败');
       }
-    } catch (err: any) {
-      setError(err.message || '获取关注状态失败');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '获取关注状态失败');
     } finally {
       setIsLoading(false);
     }
@@ -166,8 +166,8 @@ export function useFollow({
         setError(errorMessage);
         return { success: false, message: errorMessage };
       }
-    } catch (err: any) {
-      const errorMessage = err.message || '关注失败';
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : '关注失败';
       setError(errorMessage);
       return { success: false, message: errorMessage };
     } finally {
@@ -204,8 +204,8 @@ export function useFollow({
         setError(errorMessage);
         return { success: false, message: errorMessage };
       }
-    } catch (err: any) {
-      const errorMessage = err.message || '取消关注失败';
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : '取消关注失败';
       setError(errorMessage);
       return { success: false, message: errorMessage };
     } finally {

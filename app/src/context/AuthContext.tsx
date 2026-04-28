@@ -10,6 +10,7 @@ interface AuthContextType {
   login: (credentials: LoginCredentials) => Promise<CurrentUser>;
   logout: () => Promise<void>;
   refreshAuthStatus: () => Promise<void>;
+  updateCurrentUser: (updates: Partial<CurrentUser>) => void;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -104,6 +105,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const updateCurrentUser = (updates: Partial<CurrentUser>) => {
+    if (currentUser) {
+      const updatedUser = { ...currentUser, ...updates };
+      setCurrentUser(updatedUser);
+      authService.updateCurrentUser(updates);
+      window.dispatchEvent(new Event('storage'));
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -111,7 +121,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         currentUser,
         login,
         logout,
-        refreshAuthStatus
+        refreshAuthStatus,
+        updateCurrentUser
       }}
     >
       {!loading && children}

@@ -146,8 +146,8 @@ export function useMoments({
       } else {
         setError(response.error?.message || '加载动态失败');
       }
-    } catch (err: any) {
-      setError(err.message || '加载动态失败');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '加载动态失败');
     } finally {
       setIsLoading(false);
       setIsLoadingMore(false);

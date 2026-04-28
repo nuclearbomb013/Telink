@@ -655,7 +655,7 @@ class UserService {
     // Apply sorting
     if (params.sort) {
       developers.sort((a, b) => {
-        let aValue: any, bValue: any;
+        let aValue: string | number | Date, bValue: string | number | Date;
 
         // Handle nested properties for stats and other renamed fields
         switch (params.sort!.field) {

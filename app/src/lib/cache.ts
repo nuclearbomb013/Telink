@@ -70,7 +70,7 @@ export function clearAllCache(keepAuth: boolean = true): number {
   const keysToRemove = Object.values(CACHE_KEYS).filter((key) => {
     if (keepAuth) {
       // 保留认证相关数据
-      const authKeys = [
+      const authKeys: string[] = [
         CACHE_KEYS.CURRENT_USER,
         CACHE_KEYS.REFRESH_TOKEN,
         CACHE_KEYS.AUTH_TOKEN,
@@ -107,7 +107,7 @@ export function clearAllCache(keepAuth: boolean = true): number {
     }
   });
 
-  console.log(`[Cache] Cleared ${clearedCount} cache entries`);
+  console.warn(`[Cache] Cleared ${clearedCount} cache entries`);
   return clearedCount;
 }
 
@@ -164,7 +164,7 @@ export async function checkDbVersionUpdate(): Promise<boolean> {
   }
 
   if (storedVersion !== currentVersion) {
-    console.log(
+    console.warn(
       `[Cache] Database version changed: ${storedVersion} -> ${currentVersion}`
     );
     return true;
@@ -183,7 +183,7 @@ export async function syncCacheWithDb(keepAuth: boolean = true): Promise<boolean
   const needsUpdate = await checkDbVersionUpdate();
 
   if (needsUpdate) {
-    console.log('[Cache] Database reset detected, clearing cache...');
+    console.warn('[Cache] Database reset detected, clearing cache...');
     const systemInfo = await fetchSystemInfo();
     clearAllCache(keepAuth);
 

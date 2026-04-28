@@ -7,8 +7,10 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from fastapi.staticfiles import StaticFiles
 import uuid
 import time
+import os
 
 from app.config import settings
 from app.db.session import init_db, close_db
@@ -187,6 +189,13 @@ def create_app() -> FastAPI:
 
     # Include API routers
     app.include_router(api_router, prefix="/api/v1")
+
+    # Configure static files for uploads
+    upload_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
+    images_dir = os.path.join(upload_dir, "images")
+    os.makedirs(images_dir, exist_ok=True)
+    app.mount("/uploads", StaticFiles(directory=upload_dir), name="uploads")
+    logger.info("static_files_configured", upload_dir=upload_dir)
 
     # Health check endpoint
     @app.get("/health")

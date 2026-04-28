@@ -5,6 +5,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { Upload, X, Image as ImageIcon, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { uploadApi } from '@/lib/apiClient';
 
 interface ImageUploaderProps {
   value?: string;
@@ -48,7 +49,7 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
     return null;
   }, [accept, maxSize]);
 
-  const handleFile = useCallback((file: File) => {
+  const handleFile = useCallback(async (file: File) => {
     setError(null);
 
     const validationError = validateFile(file);
@@ -59,17 +60,26 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
 
     setIsLoading(true);
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const result = e.target?.result as string;
-      onChange(result);
+    try {
+      // Upload file to server
+      const response = await uploadApi.uploadImage(file);
+
+      if (response.success && response.data) {
+        // Use the returned URL
+        onChange(response.data.url);
+      } else {
+        setError(response.error?.message || '上传失败，请重试');
+      }
+    } catch (err) {
+      // 检测是否是网络连接错误（后端服务未运行）
+      if (err instanceof TypeError) {
+        setError('无法连接到服务器，请确认后端服务是否运行 (localhost:8000)');
+      } else {
+        setError('上传失败，请重试');
+      }
+    } finally {
       setIsLoading(false);
-    };
-    reader.onerror = () => {
-      setError('读取文件失败，请重试');
-      setIsLoading(false);
-    };
-    reader.readAsDataURL(file);
+    }
   }, [onChange, validateFile]);
 
   const handleClick = () => {

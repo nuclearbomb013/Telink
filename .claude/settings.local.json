@@ -59,7 +59,13 @@
       "Bash(E:KIMI_web.venvScriptsbandit.exe:*)",
       "Bash(E:KIMI_web.venvScriptspytest.exe:*)",
       "Bash(npm --version)",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(E:/KIMI_web/.venv/Scripts/python.exe -c:*)",
+      "Bash(E:/KIMI_web/.venv/Scripts/python.exe:*)",
+      "Bash(E:/KIMI_web/.venv/Scripts/ruff.exe check:*)",
+      "Bash(E:/KIMI_web/.venv/Scripts/mypy.exe:*)",
+      "Bash(cat:*)",
+      "Bash(\"E:/KIMI_web/.venv/Scripts/pytest.exe\":*)"
     ]
   }
 }

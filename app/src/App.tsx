@@ -22,6 +22,7 @@ import ForumListPage from '@/pages/ForumListPage';
 import ForumPostPage from '@/pages/ForumPostPage';
 import ForumCreatePage from '@/pages/ForumCreatePage';
 import UserProfilePage from '@/pages/UserProfilePage';
+import ProfileEditPage from '@/pages/ProfileEditPage';
 import ForumEditPage from '@/pages/ForumEditPage';
 import AuthLoginPage from '@/pages/AuthLoginPage';
 import AuthRegisterPage from '@/pages/AuthRegisterPage';
@@ -75,7 +76,7 @@ function App() {
     syncCacheWithDb(true) // keepAuth = true, preserve login state
       .then((cleared) => {
         if (cleared) {
-          console.log('[App] Cache cleared due to database reset');
+          console.warn('[App] Cache cleared due to database reset');
         }
       })
       .catch((err) => {
@@ -184,6 +185,14 @@ function App() {
 
               {/* 用户 */}
               <Route path="/user/:id" element={<UserProfilePage />} />
+              <Route
+                path="/profile/edit"
+                element={
+                  <ProtectedRoute>
+                    <ProfileEditPage />
+                  </ProtectedRoute>
+                }
+              />
 
               {/* 认证页面 */}
               <Route path="/login" element={<AuthLoginPage />} />

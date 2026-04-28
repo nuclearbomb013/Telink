@@ -26,96 +26,14 @@ const STORAGE_KEYS = {
 } as const;
 
 /**
- * Mock 初始动态数据
+ * Mock 初始动态数据 (已清空)
  */
-const INITIAL_MOMENTS: Moment[] = [
-  {
-    id: 1,
-    authorId: 1,
-    authorName: '管理员',
-    authorAvatar: undefined,
-    content: '今天完成了一个复杂的 TypeScript 类型体操，成功提取了嵌套对象中的所有可选键类型。分享给大家这个技巧！\n\n```typescript\ntype OptionalKeys<T> = {\n  [K in keyof T]-?: undefined extends T[K] ? K : never\n}[keyof T];\n```',
-    contentType: 'code',
-    codeSnippet: {
-      language: 'typescript',
-      code: 'type OptionalKeys<T> = {\n  [K in keyof T]-?: undefined extends T[K] ? K : never\n}[keyof T];',
-      filename: 'types.ts',
-      lineCount: 3,
-    },
-    visibility: 'public',
-    likes: 24,
-    commentCount: 5,
-    createdAt: Date.now() - 2 * 60 * 60 * 1000, // 2 hours ago
-    isLiked: false,
-  },
-  {
-    id: 2,
-    authorId: 2,
-    authorName: 'React 爱好者',
-    authorAvatar: undefined,
-    content: '周末去了趟杭州，西湖的风景真的很美！水天一色，让人心旷神怡。强烈推荐大家有空去走走。',
-    contentType: 'image',
-    images: [
-      { id: 1, url: 'https://picsum.photos/seed/westlake1/800/600', width: 800, height: 600, sortOrder: 0 },
-      { id: 2, url: 'https://picsum.photos/seed/westlake2/800/600', width: 800, height: 600, sortOrder: 1 },
-      { id: 3, url: 'https://picsum.photos/seed/westlake3/800/600', width: 800, height: 600, sortOrder: 2 },
-    ],
-    visibility: 'public',
-    likes: 56,
-    commentCount: 12,
-    createdAt: Date.now() - 5 * 60 * 60 * 1000, // 5 hours ago
-    location: '杭州·西湖',
-    isLiked: false,
-  },
-  {
-    id: 3,
-    authorId: 3,
-    authorName: 'TS 新手',
-    authorAvatar: undefined,
-    content: '终于把 TypeScript 的泛型搞明白了！感觉像是打开了新世界的大门。原来泛型可以这么灵活，之前写的代码简直不忍直视。继续加油！',
-    contentType: 'text',
-    visibility: 'followers',
-    likes: 18,
-    commentCount: 3,
-    createdAt: Date.now() - 12 * 60 * 60 * 1000, // 12 hours ago
-    isLiked: false,
-  },
-  {
-    id: 4,
-    authorId: 4,
-    authorName: 'Rustacean',
-    authorAvatar: undefined,
-    content: '用 Rust 重写了我们的日志解析服务，性能提升了 10 倍！内存占用从 2GB 降到了 200MB。Rust 的零成本抽象真的太强了。\n\n主要用到了:\n- async/await 异步处理\n- 零拷贝解析\n- 内存池优化',
-    contentType: 'text',
-    visibility: 'public',
-    likes: 89,
-    commentCount: 21,
-    createdAt: Date.now() - 24 * 60 * 60 * 1000, // 1 day ago
-    isLiked: false,
-  },
-  {
-    id: 5,
-    authorId: 5,
-    authorName: '前端老手',
-    authorAvatar: undefined,
-    content: '分享一个 React 性能优化的小技巧：useMemo 和 useCallback 的正确使用姿势。\n\n不是所有函数都需要包在 useCallback 里，只有当函数被传递给子组件或者作为其他 hook 的依赖时才有必要。\n\n过度优化反而会增加内存开销和比较成本。',
-    contentType: 'text',
-    visibility: 'public',
-    likes: 134,
-    commentCount: 28,
-    createdAt: Date.now() - 2 * 24 * 60 * 60 * 1000, // 2 days ago
-    isLiked: false,
-  },
-];
+const INITIAL_MOMENTS: Moment[] = [];
 
 /**
- * Mock 初始评论数据
+ * Mock 初始评论数据 (已清空)
  */
-const INITIAL_COMMENTS: MomentComment[] = [
-  { id: 1, momentId: 1, authorId: 2, authorName: 'React 爱好者', content: '这个类型体操太强了！收藏了', likes: 3, createdAt: Date.now() - 1 * 60 * 60 * 1000, isLiked: false },
-  { id: 2, momentId: 1, authorId: 3, authorName: 'TS 新手', content: '看不懂但大受震撼', likes: 5, createdAt: Date.now() - 30 * 60 * 1000, isLiked: false },
-  { id: 3, momentId: 2, authorId: 1, authorName: '管理员', content: '西湖真的很美！', likes: 2, createdAt: Date.now() - 3 * 60 * 60 * 1000, isLiked: false },
-];
+const INITIAL_COMMENTS: MomentComment[] = [];
 
 /**
  * 动态服务类

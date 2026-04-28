@@ -556,6 +556,17 @@ class AuthService {
       };
     }
   }
+
+  /**
+   * 更新当前用户信息（本地）
+   * 用于用户资料编辑后同步更新本地存储
+   */
+  updateCurrentUser(updates: Partial<CurrentUser>): void {
+    if (this.currentUser) {
+      const updatedUser = { ...this.currentUser, ...updates };
+      this.saveCurrentUser(updatedUser);
+    }
+  }
 }
 
 /**

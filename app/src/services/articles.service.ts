@@ -10,7 +10,7 @@
 
 import Fuse from 'fuse.js';
 import type { IFuseOptions } from 'fuse.js';
-import { latestArticlesConfig } from '@/config';
+import { latestArticlesConfig, type ArticleItem } from '@/config';
 import type {
   Article,
   CreateArticleData,
@@ -102,7 +102,7 @@ class ArticleService {
   /**
    * 转换配置文章为服务文章格式
    */
-  private transformConfigArticles(configArticles: any[]): Article[] {
+  private transformConfigArticles(configArticles: ArticleItem[]): Article[] {
     return configArticles.map(article => ({
       ...article,
       createdAt: Date.now(),

@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Calendar, MessageSquare, FileText, Heart, Award, Edit } from 'lucide-react';
+import { ArrowLeft, Calendar, MessageSquare, FileText, Heart, Award, Edit, Camera } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { userApi, forumApi, type UserPublic } from '@/lib/apiClient';
@@ -177,12 +177,28 @@ const UserProfilePage = () => {
           <CardContent className="p-6">
             <div className="flex flex-col sm:flex-row gap-6">
               <div className="-mt-16">
-                <UserAvatar
-                  username={user.username}
-                  avatarUrl={user.avatar}
-                  size="xl"
-                  className="border-4 border-white shadow-lg"
-                />
+                {isCurrentUser ? (
+                  <Link to="/profile/edit" title="点击更换头像">
+                    <div className="relative group cursor-pointer">
+                      <UserAvatar
+                        username={user.username}
+                        avatarUrl={user.avatar}
+                        size="xl"
+                        className="border-4 border-white shadow-lg group-hover:border-brand-text/50 transition-colors"
+                      />
+                      <div className="absolute inset-0 rounded-full bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                        <Camera size={20} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </div>
+                    </div>
+                  </Link>
+                ) : (
+                  <UserAvatar
+                    username={user.username}
+                    avatarUrl={user.avatar}
+                    size="xl"
+                    className="border-4 border-white shadow-lg"
+                  />
+                )}
               </div>
 
               <div className="flex-1 pt-2">
@@ -213,10 +229,12 @@ const UserProfilePage = () => {
                   </div>
 
                   {isCurrentUser && (
-                    <Button variant="outline" size="sm">
-                      <Edit size={14} className="mr-2" />
-                      编辑资料
-                    </Button>
+                    <Link to="/profile/edit">
+                      <Button variant="outline" size="sm">
+                        <Edit size={14} className="mr-2" />
+                        编辑资料
+                      </Button>
+                    </Link>
                   )}
                 </div>
 

@@ -29,22 +29,24 @@ class TestSecretKey:
 
     def test_secret_key_production_missing_raises_error(self):
         """Test that missing SECRET_KEY in production raises error."""
-        with patch.dict(os.environ, {"ENVIRONMENT": "production"}, clear=False):
-            # Remove SECRET_KEY if present
-            os.environ.pop("SECRET_KEY", None)
+        import sys
 
-            import sys
+        # Clear cached modules
+        for mod in list(sys.modules.keys()):
+            if mod.startswith("app.config"):
+                del sys.modules[mod]
 
-            # Clear cached module
-            if "app.config" in sys.modules:
-                del sys.modules["app.config"]
-            if "app.core.security" in sys.modules:
-                del sys.modules["app.core.security"]
+        from app.config import Settings
 
-            from app.config import get_secret_key
+        # Instantiate with empty SECRET_KEY, production env, no .env file
+        settings = Settings(
+            SECRET_KEY="",
+            ENVIRONMENT="production",
+            _env_file=None,  # Disable .env auto-load
+        )
 
-            with pytest.raises(ValueError, match="SECRET_KEY"):
-                get_secret_key()
+        with pytest.raises(ValueError, match="SECRET_KEY"):
+            _ = settings.secret_key
 
     def test_secret_key_dev_fallback(self):
         """Test that dev environment generates a fallback key."""
@@ -56,8 +58,9 @@ class TestSecretKey:
             if "app.config" in sys.modules:
                 del sys.modules["app.config"]
 
-            from app.config import get_secret_key
+            from app.config import Settings
 
-            key = get_secret_key()
+            settings = Settings()
+            key = settings.secret_key
             assert key is not None
             assert len(key) >= 32  # Should be at least 32 characters

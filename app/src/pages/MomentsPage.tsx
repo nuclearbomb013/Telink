@@ -7,8 +7,9 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, RefreshCw, Users, ChevronUp, Image, X, Send } from 'lucide-react';
+import { Plus, RefreshCw, Users, ChevronUp, Image, X, Send, AlertCircle, Loader2, CheckCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { uploadApi } from '@/lib/apiClient';
 
 import { useMoments } from '@/hooks/useMoments';
 import { useAuth } from '@/hooks/useAuth';
@@ -32,6 +33,18 @@ const SORT_OPTIONS: Array<{ value: SortOption; label: string }> = [
 ];
 
 /**
+ * 单个图片上传状态
+ */
+interface ImageUploadState {
+  id: number;
+  file: File;
+  localPreview: string;  // 本地预览 URL (用于显示)
+  uploadStatus: 'pending' | 'uploading' | 'success' | 'error';
+  uploadedUrl?: string;  // 上传成功后的服务器 URL
+  error?: string;
+}
+
+/**
  * 发布动态弹窗组件
  */
 const CreateMomentModal = ({
@@ -46,39 +59,90 @@ const CreateMomentModal = ({
   isSubmitting: boolean;
 }) => {
   const [content, setContent] = useState('');
-  const [images, setImages] = useState<MomentImage[]>([]);
+  const [imageStates, setImageStates] = useState<ImageUploadState[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
 
   /**
-   * 处理图片选择
+   * 上传单个图片到后端
    */
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const uploadSingleImage = async (imageState: ImageUploadState): Promise<{ success: boolean; url?: string; error?: string }> => {
+    try {
+      const response = await uploadApi.uploadImage(imageState.file);
+
+      if (response.success && response.data) {
+        return { success: true, url: response.data.url };
+      } else {
+        return {
+          success: false,
+          error: response.error?.message || '上传失败，请重试'
+        };
+      }
+    } catch (err) {
+      if (err instanceof TypeError) {
+        return { success: false, error: '无法连接到服务器，请确认后端服务是否运行' };
+      }
+      return { success: false, error: '上传失败，请重试' };
+    }
+  };
+
+  /**
+   * 处理图片选择 - 立即开始上传
+   */
+  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
 
-    const newImages: MomentImage[] = [];
     const maxImages = 9;
+    const availableSlots = maxImages - imageStates.length;
+    const filesToProcess = Array.from(files).slice(0, availableSlots);
 
-    Array.from(files).slice(0, maxImages - images.length).forEach((file, index) => {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          newImages.push({
-            id: Date.now() + index,
-            url: event.target.result as string,
-            sortOrder: images.length + index,
-          });
+    if (filesToProcess.length === 0) return;
 
-          // 当所有图片都处理完后更新状态
-          if (newImages.length === Math.min(files.length, maxImages - images.length)) {
-            setImages(prev => [...prev, ...newImages]);
-          }
-        }
-      };
-      reader.readAsDataURL(file);
+    // 验证文件大小 (最大 5MB)
+    const maxSizeMB = 5;
+    const validFiles = filesToProcess.filter(file => {
+      const sizeMB = file.size / (1024 * 1024);
+      return sizeMB <= maxSizeMB;
     });
+
+    if (validFiles.length < filesToProcess.length) {
+      // 有些文件超过大小限制
+      const oversizedCount = filesToProcess.length - validFiles.length;
+      console.warn(`${oversizedCount} 张图片超过 5MB 限制，已跳过`);
+    }
+
+    if (validFiles.length === 0) return;
+
+    // 创建初始状态并显示本地预览
+    const newImageStates: ImageUploadState[] = validFiles.map((file, index) => ({
+      id: Date.now() + index,
+      file,
+      localPreview: URL.createObjectURL(file),  // 本地预览
+      uploadStatus: 'uploading',
+    }));
+
+    setImageStates(prev => [...prev, ...newImageStates]);
+
+    // 逐个上传图片
+    for (const imageState of newImageStates) {
+      const result = await uploadSingleImage(imageState);
+
+      // 更新状态为 success 或 error
+      setImageStates(prev =>
+        prev.map(img =>
+          img.id === imageState.id
+            ? {
+              ...img,
+              uploadStatus: result.success ? 'success' : 'error',
+              uploadedUrl: result.url,
+              error: result.error,
+            }
+            : img
+        )
+      );
+    }
 
     // 清空 input 以便再次选择相同文件
     if (fileInputRef.current) {
@@ -90,19 +154,90 @@ const CreateMomentModal = ({
    * 移除图片
    */
   const removeImage = (id: number) => {
-    setImages(prev => prev.filter(img => img.id !== id));
+    setImageStates(prev => {
+      const img = prev.find(i => i.id === id);
+      if (img?.localPreview) {
+        URL.revokeObjectURL(img.localPreview);  // 清理预览 URL
+      }
+      return prev.filter(i => i.id !== id);
+    });
   };
 
   /**
-   * 提交表单
+   * 重试上传失败的图片
    */
-  const handleSubmit = () => {
-    onSubmit(content, images);
-    setContent('');
-    setImages([]);
+  const retryUpload = async (id: number) => {
+    const imageState = imageStates.find(img => img.id === id);
+    if (!imageState || imageState.uploadStatus !== 'error') return;
+
+    setImageStates(prev =>
+      prev.map(img =>
+        img.id === id
+          ? { ...img, uploadStatus: 'uploading', error: undefined }
+          : img
+      )
+    );
+
+    const result = await uploadSingleImage(imageState);
+
+    setImageStates(prev =>
+      prev.map(img =>
+        img.id === id
+          ? {
+            ...img,
+            uploadStatus: result.success ? 'success' : 'error',
+            uploadedUrl: result.url,
+            error: result.error,
+          }
+          : img
+      )
+    );
   };
 
-  const canSubmit = content.trim() || images.length > 0;
+  /**
+   * 提交表单 - 等待所有图片上传完成
+   */
+  const handleSubmit = async () => {
+    // 检查是否有图片正在上传
+    const hasUploading = imageStates.some(img => img.uploadStatus === 'uploading');
+    if (hasUploading) {
+      return;
+    }
+
+    // 检查是否有上传失败的图片
+    const hasErrors = imageStates.some(img => img.uploadStatus === 'error');
+    if (hasErrors) {
+      alert('有图片上传失败，请先处理');
+      return;
+    }
+
+    // 转换为 MomentImage 格式
+    const momentImages: MomentImage[] = imageStates
+      .filter(img => img.uploadStatus === 'success' && img.uploadedUrl)
+      .map((img, index) => ({
+        id: img.id,
+        url: img.uploadedUrl!,
+        sortOrder: index,
+      }));
+
+    onSubmit(content, momentImages);
+
+    // 清理本地预览 URL
+    imageStates.forEach(img => {
+      if (img.localPreview) {
+        URL.revokeObjectURL(img.localPreview);
+      }
+    });
+
+    setContent('');
+    setImageStates([]);
+  };
+
+  // 计算状态
+  const hasUploadingImages = imageStates.some(img => img.uploadStatus === 'uploading');
+  const hasFailedImages = imageStates.some(img => img.uploadStatus === 'error');
+  const hasSuccessfulImages = imageStates.some(img => img.uploadStatus === 'success');
+  const canSubmit = (content.trim() || hasSuccessfulImages) && !hasUploadingImages && !isSubmitting;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -136,21 +271,53 @@ const CreateMomentModal = ({
           />
 
           {/* 图片预览 */}
-          {images.length > 0 && (
+          {imageStates.length > 0 && (
             <div className="mt-3 grid grid-cols-3 gap-2">
-              {images.map((img) => (
+              {imageStates.map((img) => (
                 <div
                   key={img.id}
                   className="relative aspect-square rounded-sm overflow-hidden border border-brand-border/30"
                 >
+                  {/* 本地预览图片 */}
                   <img
-                    src={img.url}
+                    src={img.localPreview}
                     alt="预览"
-                    className="w-full h-full object-cover grayscale contrast-125"
+                    className={cn(
+                      "w-full h-full object-cover grayscale contrast-125",
+                      img.uploadStatus === 'error' && "opacity-50"
+                    )}
                   />
+
+                  {/* 上传状态指示器 */}
+                  {img.uploadStatus === 'uploading' && (
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                      <Loader2 size={20} className="text-white animate-spin" />
+                    </div>
+                  )}
+
+                  {img.uploadStatus === 'success' && (
+                    <div className="absolute bottom-1 right-1 p-0.5 bg-green-500 rounded-full">
+                      <CheckCircle size={12} className="text-white" />
+                    </div>
+                  )}
+
+                  {img.uploadStatus === 'error' && (
+                    <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center gap-1">
+                      <AlertCircle size={16} className="text-red-400" />
+                      <button
+                        onClick={() => retryUpload(img.id)}
+                        className="text-xs text-white underline"
+                      >
+                        重试
+                      </button>
+                    </div>
+                  )}
+
+                  {/* 删除按钮 */}
                   <button
                     onClick={() => removeImage(img.id)}
                     className="absolute top-1 right-1 p-1 bg-black/50 text-white rounded-sm hover:bg-black/70 transition-colors"
+                    disabled={img.uploadStatus === 'uploading'}
                   >
                     <X size={12} />
                   </button>
@@ -159,11 +326,20 @@ const CreateMomentModal = ({
             </div>
           )}
 
-          {/* 图片数量提示 */}
-          {images.length > 0 && (
-            <p className="mt-2 text-xs text-brand-dark-gray/60 font-roboto">
-              已选择 {images.length}/9 张图片
-            </p>
+          {/* 图片数量和状态提示 */}
+          {imageStates.length > 0 && (
+            <div className="mt-2 space-y-1">
+              <p className="text-xs text-brand-dark-gray/60 font-roboto">
+                已选择 {imageStates.length}/9 张图片
+                {hasUploadingImages && ` · 正在上传...`}
+                {hasFailedImages && ` · ${imageStates.filter(i => i.uploadStatus === 'error').length} 张失败`}
+              </p>
+              {hasFailedImages && (
+                <p className="text-xs text-red-500 font-roboto">
+                  请点击失败图片重试，或删除后重新选择
+                </p>
+              )}
+            </div>
           )}
         </div>
 
@@ -174,18 +350,18 @@ const CreateMomentModal = ({
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept="image/jpeg,image/png,image/gif,image/webp"
               multiple
               onChange={handleImageSelect}
               className="hidden"
-              disabled={images.length >= 9}
+              disabled={imageStates.length >= 9 || hasUploadingImages}
             />
             <button
               onClick={() => fileInputRef.current?.click()}
-              disabled={images.length >= 9}
+              disabled={imageStates.length >= 9 || hasUploadingImages}
               className={cn(
                 'flex items-center gap-1.5 px-3 py-1.5 rounded-sm transition-all text-sm font-roboto',
-                images.length >= 9
+                imageStates.length >= 9 || hasUploadingImages
                   ? 'text-brand-dark-gray/30 cursor-not-allowed'
                   : 'text-brand-dark-gray/60 hover:text-brand-text hover:bg-brand-linen/50'
               )}
@@ -210,7 +386,13 @@ const CreateMomentModal = ({
               disabled={!canSubmit || isSubmitting}
               className="bg-brand-text text-white hover:bg-brand-dark-gray"
             >
-              {isSubmitting ? '发布中...' : '发布'}
+              {isSubmitting
+                ? '发布中...'
+                : hasUploadingImages
+                  ? '等待上传...'
+                  : hasFailedImages
+                    ? '有上传失败'
+                    : '发布'}
             </Button>
           </div>
         </div>
