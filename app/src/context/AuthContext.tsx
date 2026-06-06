@@ -1,9 +1,9 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { authService } from '../services/auth.service';
-import { userService } from '../services/user.service';
-import { apiClient } from '../lib/apiClient';
-import type { CurrentUser } from '../services/auth.types';
-import type { LoginCredentials } from '../services/auth.types';
+import { authService } from '@/services/auth.service';
+import { userService } from '@/services/user.service';
+import { apiClient } from '@/lib/apiClient';
+import type { CurrentUser } from '@/services/auth.types';
+import type { LoginCredentials } from '@/services/auth.types';
 
 interface AuthContextType {
   isAuthenticated: boolean;
