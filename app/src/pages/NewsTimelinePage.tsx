@@ -11,9 +11,9 @@ import { useReduceMotion } from '@/hooks/useReduceMotion';
 import { cn } from '@/lib/utils';
 import { EASING, DURATION } from '@/constants/animation.constants';
 import { notificationService } from '@/services/notification.service';
-import TimelineItem from './TimelineItem';
-import TimelineSidebar from './TimelineSidebar';
-import HotspotTracker from './HotspotTracker';
+import TimelineItem from '@/components/News/TimelineItem';
+import TimelineSidebar from '@/components/News/TimelineSidebar';
+import HotspotTracker from '@/components/News/HotspotTracker';
 import { newsService } from '@/services/news.service';
 import type { NewsItem, NewsTimelineFilter } from '@/services/news.types';
 

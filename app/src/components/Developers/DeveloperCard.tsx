@@ -7,8 +7,8 @@
 
 import React from 'react';
 import { Link } from 'react-router-dom';
-import type { DeveloperProfile } from '../../services/developer.types';
-import UserAvatar from '../Forum/UserAvatar';
+import type { DeveloperProfile } from '@/services/developer.types';
+import UserAvatar from '@/components/Forum/UserAvatar';
 
 interface DeveloperCardProps {
   /** The developer profile to display */

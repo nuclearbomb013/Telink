@@ -16,7 +16,7 @@ import type {
   DeveloperFilter,
   DeveloperSortOption,
   GetDevelopersParams
-} from '../services/developer.types';
+} from '@/services/developer.types';
 
 export const DeveloperShowcaseSection: React.FC = () => {
   const navigate = useNavigate();

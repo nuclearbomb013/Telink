@@ -6,8 +6,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { ChevronUp, ChevronDown } from 'lucide-react';
-import type { DeveloperFilter, DeveloperSortOption } from '../../services/developer.types';
-import { userService } from '../../services/user.service';
+import type { DeveloperFilter, DeveloperSortOption } from '@/services/developer.types';
+import { userService } from '@/services/user.service';
 
 interface DeveloperFiltersProps {
   /** Current filter values */
