@@ -458,8 +458,9 @@ const AuthRegisterPage = () => {
 
               {/* 用户条款 */}
               <div className="space-y-2">
-                <label className="flex items-start gap-2 cursor-pointer">
+                <label className="flex items-start gap-2 cursor-pointer" htmlFor="terms-accept">
                   <input
+                    id="terms-accept"
                     type="checkbox"
                     checked={termsAccepted}
                     onChange={(e) => {

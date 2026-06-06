@@ -54,6 +54,7 @@ const ForumEditPage = () => {
   const [loading, setLoading] = useState(true);
   const [isPreview, setIsPreview] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   // 图片上传模式：'upload' 或 'url'
@@ -170,30 +171,36 @@ const ForumEditPage = () => {
     if (!validateForm() || !post) return;
 
     setIsSubmitting(true);
+    setSubmitError(null);
 
-    // 解析标签
-    const tagArray = tags
-      .split(/\s+/)
-      .filter(Boolean)
-      .map(tag => tag.replace('#', ''))
-      .slice(0, 5);
+    try {
+      // 解析标签
+      const tagArray = tags
+        .split(/\s+/)
+        .filter(Boolean)
+        .map(tag => tag.replace('#', ''))
+        .slice(0, 5);
 
-    const updateData: UpdateForumPostData = {
-      id: post.id,
-      title: title.trim(),
-      content: content.trim(),
-      category,
-      tags: tagArray,
-      coverImage: coverImage || undefined,
-    };
+      const updateData: UpdateForumPostData = {
+        id: post.id,
+        title: title.trim(),
+        content: content.trim(),
+        category,
+        tags: tagArray,
+        coverImage: coverImage || undefined,
+      };
 
-    const response = await forumService.updatePost(updateData);
+      const response = await forumService.updatePost(updateData);
 
-    if (response.success && response.data) {
-      // 更新成功，跳转到帖子详情页
-      navigate(`/forum/${response.data.slug}`, { replace: true });
-    } else {
-      alert('更新失败：' + response.error?.message);
+      if (response.success) {
+        // 更新成功，跳转到帖子详情页
+        navigate(response.data ? `/forum/${response.data.slug}` : '/forum', { replace: true });
+      } else {
+        setSubmitError(response.error?.message || '更新失败，请稍后重试');
+      }
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : '网络错误，请检查连接后重试');
+    } finally {
       setIsSubmitting(false);
     }
   };
@@ -490,6 +497,11 @@ const ForumEditPage = () => {
 
             {/* 提交按钮 */}
             <div className="flex items-center justify-end gap-4 pt-6 border-t border-brand-border/30">
+              {submitError && (
+                <div className="flex-1 text-sm text-red-600 bg-red-50 border border-red-200 rounded-sm px-3 py-2" role="alert">
+                  {submitError}
+                </div>
+              )}
               <Button
                 type="button"
                 variant="ghost"

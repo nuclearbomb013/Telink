@@ -27,41 +27,53 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     for the TechInk application's specific requirements (Google Fonts, etc.).
     """
 
-    # Security headers configuration (P14 fixes applied - unified with frontend)
-    SECURITY_HEADERS = {
-        # Prevent MIME type sniffing
-        "X-Content-Type-Options": "nosniff",
+    # P0-5: Production CSP - no localhost entries, strict policies
+    # Development CSP includes localhost for Vite dev server & local API
+    PRODUCTION_CSP = (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data: blob: https:; "
+        "connect-src 'self'; "
+        "media-src 'self'; "
+        "object-src 'none'; "
+        "frame-src 'none'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self';"
+    )
 
-        # Prevent clickjacking
-        "X-Frame-Options": "DENY",
+    DEVELOPMENT_CSP = (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data: blob: https: http://localhost:8000; "
+        "connect-src 'self' http://localhost:* ws://localhost:*; "
+        "media-src 'self'; "
+        "object-src 'none'; "
+        "frame-src 'none'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self';"
+    )
 
-        # Enable XSS filtering (legacy but still useful for older browsers)
-        "X-XSS-Protection": "1; mode=block",
+    @property
+    def csp_policy(self) -> str:
+        if settings.ENVIRONMENT == "production":
+            return self.PRODUCTION_CSP
+        return self.DEVELOPMENT_CSP
 
-        # Control referrer information
-        "Referrer-Policy": "strict-origin-when-cross-origin",
-
-        # Content Security Policy - Production-ready (unified with frontend)
-        # P14-159: Removed 'unsafe-eval' and 'unsafe-inline' from script-src
-        # P14-160: Added object-src 'none'
-        # P14-161: Added base-uri 'self'
-        # P14-162: Added form-action 'self'
-        # P14-164: frame-ancestors 'none' already present
-        "Content-Security-Policy": (
-            "default-src 'self'; "
-            "script-src 'self'; "
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-            "font-src 'self' https://fonts.gstatic.com; "
-            "img-src 'self' data: blob: https:; "
-            "connect-src 'self'; "
-            "media-src 'self'; "
-            "object-src 'none'; "
-            "frame-src 'none'; "
-            "frame-ancestors 'none'; "
-            "base-uri 'self'; "
-            "form-action 'self';"
-        ),
-    }
+    @property
+    def security_headers(self) -> dict:
+        return {
+            "X-Content-Type-Options": "nosniff",
+            "X-Frame-Options": "DENY",
+            "X-XSS-Protection": "1; mode=block",
+            "Referrer-Policy": "strict-origin-when-cross-origin",
+            "Content-Security-Policy": self.csp_policy,
+        }
 
     # HSTS header - only added when app is running in production mode
     HSTS_HEADER = "max-age=31536000; includeSubDomains"
@@ -70,8 +82,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         """Process request and add security headers to response."""
         response = await call_next(request)
 
-        # Add security headers
-        for header_name, header_value in self.SECURITY_HEADERS.items():
+        for header_name, header_value in self.security_headers.items():
             response.headers[header_name] = header_value
 
         # Add HSTS only in production environment

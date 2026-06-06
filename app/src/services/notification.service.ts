@@ -197,9 +197,10 @@ class NotificationService {
    * 清空所有通知（本地操作，需后端支持批量删除）
    */
   async clearAll(): Promise<void> {
-    // 逐个删除
-    for (const notification of this.cachedNotifications) {
-      await this.deleteNotification(notification.id);
+    // 先复制通知 ID 数组再遍历删除，避免迭代过程中修改数组导致漏删
+    const ids = this.cachedNotifications.map(n => n.id);
+    for (const id of ids) {
+      await this.deleteNotification(id);
     }
     this.cachedNotifications = [];
     this.cachedUnreadCount = 0;

@@ -191,6 +191,7 @@ export function EmptyFavorites() {
 /**
  * 通用空状态配置
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export const emptyStates = {
   posts: EmptyPosts,
   search: EmptySearch,

@@ -138,9 +138,11 @@ async def get_posts(
     if category and category != "all":
         query = query.where(Post.category == category)
 
-    # Search
+    # Search with escaped wildcards to prevent abuse
     if search:
-        search_term = f"%{search}%"
+        # Escape % and _ wildcards that could be abused for full-table scans
+        escaped_search = search.replace('%', '\\%').replace('_', '\\_')
+        search_term = f"%{escaped_search}%"
         query = query.where(
             or_(
                 Post.title.ilike(search_term),

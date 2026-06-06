@@ -143,7 +143,7 @@ export const DeveloperFilters: React.FC<DeveloperFiltersProps> = ({
   const handleSortFieldChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     onSortChange({
       ...currentSort,
-      field: e.target.value as any, // TS will validate at runtime
+      field: e.target.value as typeof currentSort.field,
     });
   };
 

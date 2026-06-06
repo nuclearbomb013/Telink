@@ -22,12 +22,9 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy import text, select
-from app.db.session import async_session_maker, engine, Base, init_db
+from app.db.session import async_session_maker, engine
 from app.models.user import User, UserRole
 from app.models.post import Post, PostTag
-from app.models.comment import Comment
-from app.models.notification import Notification
-from app.models.token_blacklist import TokenBlacklist
 from app.core.security import PasswordManager
 
 # Version file path (same location as in system.py)

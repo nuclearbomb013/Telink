@@ -1,7 +1,19 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { gsap } from 'gsap';
 import { ArrowUp, Instagram, Twitter, Youtube } from 'lucide-react';
 import { footerConfig } from '@/config';
+
+const footerRouteMap: Record<string, string> = {
+  '首页': '/',
+  '文章': '/articles',
+  '话题': '/forum',
+  '热点': '/news-timeline',
+  '关于我们': '/developers',
+  '隐私政策': '#',
+  '使用条款': '#',
+  'Cookie 政策': '#',
+};
 
 /**
  * Footer Component
@@ -187,8 +199,8 @@ const Footer = () => {
             <ul className="space-y-2">
               {footerConfig.categories.map((item) => (
                 <li key={item}>
-                  <a
-                    href="#"
+                  <Link
+                    to={footerRouteMap[item] || '#'}
                     className={`font-roboto text-sm transition-colors duration-300 cursor-hover ${
                       isEmailFocused
                         ? 'text-brand-linen hover:text-brand-light-gray'
@@ -196,7 +208,7 @@ const Footer = () => {
                     }`}
                   >
                     {item}
-                  </a>
+                  </Link>
                 </li>
               ))}
             </ul>
@@ -214,8 +226,8 @@ const Footer = () => {
             <ul className="space-y-2">
               {footerConfig.pages.map((item) => (
                 <li key={item}>
-                  <a
-                    href="#"
+                  <Link
+                    to={footerRouteMap[item] || '#'}
                     className={`font-roboto text-sm transition-colors duration-300 cursor-hover ${
                       isEmailFocused
                         ? 'text-brand-linen hover:text-brand-light-gray'
@@ -223,7 +235,7 @@ const Footer = () => {
                     }`}
                   >
                     {item}
-                  </a>
+                  </Link>
                 </li>
               ))}
             </ul>
@@ -241,8 +253,8 @@ const Footer = () => {
             <ul className="space-y-2">
               {footerConfig.legalLinks.map((item) => (
                 <li key={item}>
-                  <a
-                    href="#"
+                  <Link
+                    to={footerRouteMap[item] || '#'}
                     className={`font-roboto text-sm transition-colors duration-300 cursor-hover ${
                       isEmailFocused
                         ? 'text-brand-linen hover:text-brand-light-gray'
@@ -250,7 +262,7 @@ const Footer = () => {
                     }`}
                   >
                     {item}
-                  </a>
+                  </Link>
                 </li>
               ))}
             </ul>

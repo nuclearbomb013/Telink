@@ -646,6 +646,7 @@ export type Duration = keyof typeof DURATION;
 /**
  * 获取响应式值
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function getResponsiveValue<T extends Record<string, any>>(
   tokens: T,
   _breakpoint: Breakpoint = 'md'

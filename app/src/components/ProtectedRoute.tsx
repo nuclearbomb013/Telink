@@ -7,6 +7,7 @@
 import { useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { useAuthContext } from '@/context/AuthContext';
 
 export interface ProtectedRouteProps {
   /** 子组件 */
@@ -28,11 +29,12 @@ export interface ProtectedRouteProps {
 const ProtectedRoute = ({ children, redirectTo = '/login' }: ProtectedRouteProps) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated } = useAuth();
+  // P1-10: Get loading state directly from AuthContext
+  const { loading: isLoading } = useAuthContext();
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
-      // 重定向到登录页，并记录来源路径
       navigate(redirectTo, {
         state: { from: location },
         replace: false,

@@ -293,7 +293,7 @@ const SearchBar = ({
               </label>
               <select
                 value={filters.sortBy || 'newest'}
-                onChange={(e) => setFilters({ ...filters, sortBy: e.target.value as any })}
+                onChange={(e) => setFilters({ ...filters, sortBy: e.target.value as typeof filters.sortBy })}
                 className="w-full px-3 py-2 font-roboto text-brand-text bg-white/50 border border-brand-border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-text/30 focus:border-brand-text transition-all"
               >
                 <option value="newest">最新发布</option>

@@ -43,6 +43,21 @@ class RateLimiter:
         cutoff = time.time() - window_seconds
         self._requests[key] = [ts for ts in self._requests[key] if ts > cutoff]
 
+    def _periodic_cleanup(self, max_window: int = 3600) -> None:
+        """Periodic cleanup: remove stale keys and free memory.
+
+        Called periodically to prevent unbounded memory growth from
+        keys that are no longer actively used.
+        """
+        cutoff = time.time() - max_window
+        with self._lock:
+            stale_keys = [
+                key for key, timestamps in self._requests.items()
+                if not timestamps or max(timestamps) < cutoff
+            ]
+            for key in stale_keys:
+                del self._requests[key]
+
     def is_allowed(
         self,
         key: str,

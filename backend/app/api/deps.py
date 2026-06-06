@@ -119,6 +119,31 @@ def require_roles(roles: list[str]):
     return role_checker
 
 
+async def get_current_user_optional(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    db: AsyncSession = Depends(get_db)
+) -> Optional[User]:
+    """
+    Get current user from JWT token silently.
+    Returns None if no token, invalid token, or revoked token.
+    Never raises exceptions - ideal for public endpoints with optional auth.
+    """
+    if not credentials:
+        return None
+    try:
+        token = credentials.credentials
+        jti = TokenManager.get_token_jti(token)
+        user_id = TokenManager.verify_token(token, "access")
+        if not user_id:
+            return None
+        if jti and await is_token_revoked(db, jti):
+            return None
+        result = await db.execute(select(User).where(User.id == int(user_id)))
+        return result.scalar_one_or_none()
+    except Exception:
+        return None
+
+
 # Common role dependencies
 require_admin = require_roles(["admin"])
 require_moderator = require_roles(["admin", "moderator"])

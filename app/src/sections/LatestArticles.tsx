@@ -30,7 +30,7 @@ const LatestArticles = () => {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
-  const [cardWidth, setCardWidth] = useState(400);
+  const [cardWidth, setCardWidth] = useState(280);
   const [gap, setGap] = useState(48);
   const [, setCardsPerView] = useState(3);
   const [maxIndex, setMaxIndex] = useState(() => Math.max(0, totalCards - 3));
@@ -46,8 +46,8 @@ const LatestArticles = () => {
     if (!shouldRender) return;
 
     const updateDimensions = () => {
-      const width = window.innerWidth >= 1024 ? 400 : window.innerWidth >= 768 ? 320 : 280;
-      const spacing = window.innerWidth >= 1024 ? 48 : 24;
+      const width = window.innerWidth >= 1024 ? 400 : window.innerWidth >= 768 ? 320 : 260;
+      const spacing = window.innerWidth >= 1024 ? 48 : window.innerWidth >= 768 ? 24 : 16;
       const viewCount = window.innerWidth >= 1024 ? 3 : window.innerWidth >= 768 ? 2 : 1;
       const maxIdx = Math.max(0, totalCards - viewCount);
 
@@ -226,20 +226,20 @@ const LatestArticles = () => {
             style={{
               width: '0',
               height: '0',
-              borderTop: '40px solid transparent',
-              borderBottom: '40px solid transparent',
-              borderRight: canGoLeft ? '50px solid #000000' : '50px solid #666666',
-              marginLeft: '-20px',
-              filter: canGoLeft ? 'drop-shadow(-4px 0 8px rgba(0,0,0,0.3))' : 'none',
+              borderTop: '28px solid transparent',
+              borderBottom: '28px solid transparent',
+              borderRight: canGoLeft ? '36px solid #000000' : '36px solid #666666',
+              marginLeft: '-12px',
+              filter: canGoLeft ? 'drop-shadow(-3px 0 6px rgba(0,0,0,0.3))' : 'none',
             }}
             aria-label="上一篇文章"
           >
             <span
               className="absolute text-white font-bold pointer-events-none"
               style={{
-                fontSize: '20px',
-                right: '-35px',
-                top: '-12px',
+                fontSize: '16px',
+                right: '-25px',
+                top: '-10px',
               }}
             >
               &#8249;
@@ -247,7 +247,7 @@ const LatestArticles = () => {
           </button>
 
           {/* Cards container with overflow hidden */}
-          <div ref={containerRef} className="relative mx-16 lg:mx-20 overflow-hidden">
+          <div ref={containerRef} className="relative mx-4 sm:mx-8 lg:mx-12 xl:mx-20 overflow-hidden">
             {/* Track that moves left/right - removing hardcoded transform */}
             <div
               ref={trackRef}
@@ -329,20 +329,20 @@ const LatestArticles = () => {
             style={{
               width: '0',
               height: '0',
-              borderTop: '40px solid transparent',
-              borderBottom: '40px solid transparent',
-              borderLeft: canGoRight ? '50px solid #000000' : '50px solid #666666',
-              marginRight: '-20px',
-              filter: canGoRight ? 'drop-shadow(4px 0 8px rgba(0,0,0,0.3))' : 'none',
+              borderTop: '28px solid transparent',
+              borderBottom: '28px solid transparent',
+              borderLeft: canGoRight ? '36px solid #000000' : '36px solid #666666',
+              marginRight: '-12px',
+              filter: canGoRight ? 'drop-shadow(3px 0 6px rgba(0,0,0,0.3))' : 'none',
             }}
             aria-label="下一篇文章"
           >
             <span
               className="absolute text-white font-bold pointer-events-none"
               style={{
-                fontSize: '20px',
-                left: '-35px',
-                top: '-12px',
+                fontSize: '16px',
+                left: '-25px',
+                top: '-10px',
               }}
             >
               &#8250;

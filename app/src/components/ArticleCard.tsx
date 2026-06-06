@@ -203,7 +203,7 @@ const ArticleCard = ({
         aria-label={`查看文章：${article.title}`}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
-            handleClick(e as any);
+            handleClick(e as unknown as React.MouseEvent<HTMLElement>);
           }
         }}
       >

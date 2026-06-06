@@ -92,7 +92,7 @@ const ForumSection = () => {
               ))}
             </div>
 
-            <div className="grid grid-cols-3 gap-6 pt-8 border-t border-brand-border/30">
+            <div className="grid grid-cols-3 sm:grid-cols-3 gap-3 sm:gap-6 pt-8 border-t border-brand-border/30">
               <StatItem label="总帖子数" value={stats?.totalPosts ?? 0} icon={MessageSquare} />
               <StatItem label="总回复数" value={stats?.totalReplies ?? 0} icon={MessageSquare} />
               <StatItem label="活跃用户" value={stats?.totalUsers ?? 0} icon={TrendingUp} />

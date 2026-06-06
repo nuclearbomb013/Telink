@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { gsap } from 'gsap';
 import { ArrowRight } from 'lucide-react';
 
@@ -155,7 +156,7 @@ const HeroSection = () => {
             {/* Date - Vertical */}
             <div
               ref={dateRef}
-              className="absolute -left-12 top-1/2 -translate-y-1/2 hidden xl:block"
+              className="absolute left-0 xl:-left-12 top-1/2 -translate-y-1/2 hidden xl:block"
             >
               <span
                 className="font-roboto text-xs tracking-widest text-brand-dark-gray writing-mode-vertical rotate-180"
@@ -210,8 +211,8 @@ const HeroSection = () => {
                 {heroConfig.description}
               </p>
 
-              <a
-                href="#"
+              <Link
+                to="/forum"
                 className="group inline-flex items-center gap-3 font-roboto text-sm uppercase tracking-wider text-brand-text hover:text-brand-dark-gray transition-colors cursor-hover magnetic"
               >
                 <span className="relative">
@@ -219,7 +220,7 @@ const HeroSection = () => {
                   <span className="absolute bottom-0 left-0 w-full h-px bg-brand-text transform origin-left transition-transform duration-500 group-hover:scale-x-0" />
                 </span>
                 <ArrowRight size={16} className="transform transition-transform duration-300 group-hover:translate-x-1" />
-              </a>
+              </Link>
             </div>
           </div>
         </div>

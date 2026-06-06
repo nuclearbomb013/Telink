@@ -1,17 +1,19 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { Upload, X, Image as ImageIcon, AlertCircle } from 'lucide-react';
+import { uploadApi } from '@/lib/apiClient';
 
 /**
  * Cover Image Uploader Component
  *
  * E-ink style cover image upload component with drag & drop support.
+ * P1-7: Now uploads to backend server and returns server URL (not blob URL).
  * Features:
  * - Drag and drop upload
  * - Click to select
- * - Image preview
+ * - Image preview (local blob while uploading, server URL after)
  * - Remove functionality
  * - File validation
- * - Loading state
+ * - Real backend upload with progress state
  *
  * @example
  * ```tsx
@@ -74,9 +76,20 @@ const CoverImageUploader: React.FC<CoverImageUploaderProps> = ({
   const [isUploading, setIsUploading] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const objectUrlRef = useRef<string | null>(null);
+
+  // Cleanup object URL on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+      }
+    };
+  }, []);
 
   /**
-   * Handle file processing
+   * Handle file processing - uploads to backend and returns server URL
+   * P1-7: Upload to backend server instead of creating local blob URL
    */
   const processFile = useCallback(
     async (file: File) => {
@@ -92,25 +105,44 @@ const CoverImageUploader: React.FC<CoverImageUploaderProps> = ({
       setLocalError(null);
       setIsUploading(true);
 
+      // Create local blob URL for immediate preview while uploading
+      let localPreview: string | null = null;
       try {
-        // Read file as data URL
-        const reader = new FileReader();
+        if (objectUrlRef.current) {
+          URL.revokeObjectURL(objectUrlRef.current);
+        }
+        localPreview = URL.createObjectURL(file);
+        objectUrlRef.current = localPreview;
+      } catch {
+        // Preview creation failed, but we continue with upload
+      }
 
-        await new Promise<void>((resolve, reject) => {
-          reader.onload = () => {
-            const result = reader.result as string;
-            onChange(result);
-            resolve();
-          };
-          reader.onerror = () => {
-            reject(new Error('读取文件失败'));
-          };
-          reader.readAsDataURL(file);
-        });
+      try {
+        // P1-7: Actually upload to backend to get a persistent server URL
+        const response = await uploadApi.uploadImage(file);
+
+        if (response.success && response.data) {
+          // Use server URL (persistent, works across browsers/sessions)
+          onChange(response.data.url);
+        } else {
+          const errorMsg = response.error?.message || '图片上传失败，请稍后重试';
+          setLocalError(errorMsg);
+          onError?.(errorMsg);
+          // Revert preview
+          if (localPreview) {
+            URL.revokeObjectURL(localPreview);
+            objectUrlRef.current = null;
+          }
+        }
       } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : '读取文件失败，请稍后重试';
+        const errorMsg = err instanceof Error ? err.message : '图片上传失败，请稍后重试';
         setLocalError(errorMsg);
         onError?.(errorMsg);
+        // Revert preview
+        if (localPreview) {
+          URL.revokeObjectURL(localPreview);
+          objectUrlRef.current = null;
+        }
       } finally {
         setIsUploading(false);
       }

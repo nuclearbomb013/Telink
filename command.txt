@@ -1,0 +1,21 @@
+
+  # 进入项目目录
+  cd E:\KIMI_web\app
+
+  # 启动开发服务器
+  npm run dev
+
+
+  cd E:\KIMI_web\backend
+
+  # 安装依赖（首次运行）
+  pip install -r requirements.txt
+
+  # 启动开发服务器
+  python -m uvicorn app.main:app --reload --port 8000
+
+  或者直接运行：
+  cd E:\KIMI_web\backend
+  python -m app.main
+#登陆数据库
+psql -U postgres

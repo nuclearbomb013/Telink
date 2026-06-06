@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -33,6 +33,16 @@ type SubmitStep = 'upload' | 'preview' | 'edit' | 'success';
 const SubmitArticlePage = () => {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const redirectTimerRef = useRef<number | null>(null);
+
+  // Cleanup redirect timer on unmount
+  useEffect(() => {
+    return () => {
+      if (redirectTimerRef.current !== null) {
+        clearTimeout(redirectTimerRef.current);
+      }
+    };
+  }, []);
   
   const [currentStep, setCurrentStep] = useState<SubmitStep>('upload');
   const [isParsing, setIsParsing] = useState(false);
@@ -94,8 +104,8 @@ const SubmitArticlePage = () => {
       });
       
       setCurrentStep('preview');
-    } catch (err: any) {
-      setError(err.message || '解析文件失败');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '解析文件失败');
       setUploadedFile(null);
     } finally {
       setIsParsing(false);
@@ -173,14 +183,15 @@ const SubmitArticlePage = () => {
 
       const submittedArticle = submitArticle(articleData);
       setCurrentStep('success');
-      
-      // Redirect after success
-      setTimeout(() => {
+
+      // Redirect after success — store timer ID for cleanup on unmount
+      redirectTimerRef.current = window.setTimeout(() => {
         navigate(`/articles/${submittedArticle.slug}`);
       }, 2000);
-      
-    } catch (err: any) {
-      setError(err.message || '提交失败，请稍后重试');
+
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : '提交失败，请稍后重试';
+      setError(message);
     } finally {
       setIsSubmitting(false);
     }

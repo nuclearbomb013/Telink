@@ -1,12 +1,13 @@
 /**
  * Markdown 渲染组件
  * 支持语法高亮和优雅的排版
- * 包含 XSS 保护 (P2-29)
+ * 使用 DOMPurify 进行 XSS 防护 (P0-3)
  */
 
 import { useEffect, useRef, useMemo } from 'react';
 import { marked } from 'marked';
 import hljs from 'highlight.js';
+import DOMPurify from 'dompurify';
 import 'highlight.js/styles/atom-one-dark.css';
 
 interface MarkdownRendererProps {
@@ -15,7 +16,35 @@ interface MarkdownRendererProps {
 }
 
 /**
- * Escape HTML to prevent XSS
+ * DOMPurify configuration: allow only safe tags and attributes
+ * for rendered Markdown content.
+ */
+const DOMPURIFY_CONFIG = {
+  ALLOWED_TAGS: [
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'p', 'br', 'hr',
+    'ul', 'ol', 'li',
+    'blockquote', 'pre', 'code',
+    'table', 'thead', 'tbody', 'tr', 'th', 'td',
+    'em', 'strong', 'del', 'ins', 'sub', 'sup',
+    'a', 'img', 'span', 'div',
+    'input', 'label', 'details', 'summary',
+  ],
+  ALLOWED_ATTR: [
+    'href', 'title', 'target', 'rel',
+    'src', 'alt', 'width', 'height', 'loading',
+    'class', 'id', 'style',
+    'type', 'checked', 'disabled',
+  ],
+  ALLOWED_DATA_ATTR: ['code'],
+  ALLOWED_URI_REGEXP: /^(?:(?:https?|ftp|mailto):|[^a-z]|[a-z+.-]+(?:[^a-z+.-:]|$))/i,
+  FORBID_TAGS: ['svg', 'math', 'style'],
+  FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur'],
+  USE_PROFILES: { html: true },
+};
+
+/**
+ * Escape HTML to prevent XSS (fallback)
  */
 function escapeHtml(unsafe: string): string {
   return unsafe
@@ -27,25 +56,26 @@ function escapeHtml(unsafe: string): string {
 }
 
 /**
- * Sanitize HTML to prevent XSS attacks (P2-29)
- * Removes script tags and dangerous attributes
+ * Sanitize HTML using DOMPurify for robust XSS protection.
+ * Replaces the previous regex-based approach which was vulnerable
+ * to case variants, entity encoding, SVG/MathML, and exotic attributes.
  */
 function sanitizeHtml(html: string): string {
-  // Remove script tags
-  let sanitized = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
-  // Remove on* event handlers
-  sanitized = sanitized.replace(/\s*on\w+\s*=\s*["'][^"']*["']/gi, '');
-  // Remove javascript: URLs
-  sanitized = sanitized.replace(/javascript:/gi, '');
-  // Remove data: URLs in href/src (except images)
-  sanitized = sanitized.replace(/(href|src)\s*=\s*["']data:(?!image\/)[^"']*["']/gi, '');
-  return sanitized;
+  try {
+    // DOMPurify v3 may return TrustedHTML; cast to string for compatibility
+    const result = DOMPurify.sanitize(html, DOMPURIFY_CONFIG);
+    return typeof result === 'string' ? result : String(result);
+  } catch (e) {
+    console.error('DOMPurify sanitization failed, using escape fallback:', e);
+    // Fallback: escape all HTML if sanitization fails
+    return escapeHtml(html);
+  }
 }
 
 /**
  * 渲染 Markdown 内容
  */
-function renderMarkdown(content: any): string {
+function renderMarkdown(content: unknown): string {
   // 确保 content 是字符串
   if (typeof content !== 'string') {
     console.error('renderMarkdown received non-string content:', typeof content, content);
@@ -72,6 +102,7 @@ function renderMarkdown(content: any): string {
 
   try {
     // 配置 marked 用于语法高亮
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (marked as any).setOptions({
       breaks: true,
       gfm: true,
@@ -88,7 +119,7 @@ function renderMarkdown(content: any): string {
 
     // 使用marked解析Markdown
     const result = marked.parse(content);
-    // P2-29: Sanitize HTML to prevent XSS attacks
+    // P0-3: Use DOMPurify for robust XSS protection
     return sanitizeHtml(result as string);
   } catch (error) {
     console.error('Markdown render error:', error);

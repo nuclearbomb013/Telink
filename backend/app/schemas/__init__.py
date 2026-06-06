@@ -31,6 +31,14 @@ from app.schemas.post import (
     GetPostsParams,
     PostStats
 )
+from app.schemas.moment import (  # noqa: F401
+    MomentCreate,
+    MomentUpdate,
+    MomentResponse,
+    MomentCommentCreate,
+    MomentCommentResponse,
+    MomentListResult,
+)
 from app.schemas.comment import (
     CommentBase,
     CommentCreate,

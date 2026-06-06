@@ -79,7 +79,7 @@ const ForumSearchPanel = ({
    */
   useEffect(() => {
     const loadPosts = async () => {
-      const response = await forumService.getPosts({});
+      const response = await forumService.getPosts({ limit: 50 });
       if (response.success && response.data) {
         setAllPosts(response.data.posts);
       }

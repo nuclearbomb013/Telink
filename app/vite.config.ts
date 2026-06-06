@@ -35,23 +35,34 @@ export default defineConfig(({ mode }) => {
       // Rollup options for code splitting
       rollupOptions: {
         output: {
-          // Manual chunk splitting for better caching
-          manualChunks: {
-            // Vendor libraries
-            'vendor': [
-              'react',
-              'react-dom',
-            ],
-            // Animation libraries (heavy)
-            'animations': [
-              'gsap',
-              '@gsap/react',
-              'lenis',
-            ],
-            // UI components
-            'ui': [
-              'lucide-react',
-            ],
+          // P2-9: Chunk splitting strategy - separate vendor from app code
+          manualChunks(id) {
+            // Core vendor (React ecosystem)
+            if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) {
+              return 'vendor-react';
+            }
+            // Animation libraries
+            if (id.includes('node_modules/gsap') || id.includes('node_modules/lenis')) {
+              return 'vendor-animations';
+            }
+            // UI libraries
+            if (id.includes('node_modules/lucide-react') || id.includes('node_modules/@radix-ui')) {
+              return 'vendor-ui';
+            }
+            // Markdown/editor (eagerly loaded: marked, dompurify, highlight.js)
+            // mammoth is dynamically imported in documentParser, let Rollup split it
+            if (id.includes('node_modules/marked') || id.includes('node_modules/dompurify') ||
+                id.includes('node_modules/highlight.js')) {
+              return 'vendor-markdown';
+            }
+            // mammoth is heavy (1MB+) and only used via dynamic import in SubmitArticlePage
+            if (id.includes('node_modules/mammoth')) {
+              return;  // Let Rollup naturally split with the lazy chunk
+            }
+            // Everything else in node_modules
+            if (id.includes('node_modules')) {
+              return 'vendor-other';
+            }
           },
           // Asset naming for better caching
           entryFileNames: 'assets/[name]-[hash].js',
@@ -84,9 +95,18 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 5173,
       host: true, // 监听所有局域网 IP
+      // Allow sakuraFRP tunnel host
+      allowedHosts: ['frp-put.com', '.frp-put.com'],
+
       // Enable HMR overlay
       hmr: {
         overlay: true,
+      },
+      // Security headers for dev server (frame-ancestors + X-Frame-Options
+      // can't be set via <meta> tags — browsers ignore them there)
+      headers: {
+        'X-Frame-Options': 'DENY',
+        'Content-Security-Policy': "frame-ancestors 'none';",
       },
       // 反向代理配置 - 解决 CORS 问题
       proxy: {

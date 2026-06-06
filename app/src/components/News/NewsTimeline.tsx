@@ -46,7 +46,7 @@ const NewsTimeline: React.FC<NewsTimelineProps> = ({ className = '' }) => {
         setHotNews(hotResponse.data);
       }
     } catch (error) {
-      console.error('获取资讯数据失败:', error);
+      console.warn('[NewsTimeline] 获取资讯数据失败:', error);
 
       // 向用户显示错误通知
       notificationService.error('资讯加载失败', '无法获取最新资讯，请稍后再试');
@@ -145,21 +145,29 @@ const NewsTimeline: React.FC<NewsTimelineProps> = ({ className = '' }) => {
 
   // 动画效果
   useEffect(() => {
-    if (prefersReducedMotion || !containerRef.current) return;
+    if (prefersReducedMotion || !containerRef.current || newsItems.length === 0) return;
 
-    // 进场动画
-    const ctx = gsap.context(() => {
-      gsap.from(containerRef.current!.querySelectorAll('.timeline-item'), {
-        opacity: 0,
-        y: 50,
-        duration: DURATION.medium,
-        ease: EASING.expoOut,
-        stagger: DURATION.fast,
-        delay: DURATION.fast,
+    // 等待虚拟滚动渲染完成后再执行动画
+    const timer = setTimeout(() => {
+      const items = containerRef.current?.querySelectorAll('.timeline-item');
+      if (!items || items.length === 0) return;
+
+      const ctx = gsap.context(() => {
+        gsap.from(items, {
+          opacity: 0,
+          y: 50,
+          duration: DURATION.medium,
+          ease: EASING.expoOut,
+          stagger: DURATION.fast,
+          delay: DURATION.fast,
+        });
       });
-    });
 
-    return () => ctx.revert();
+      // No revert needed since we handle cleanup manually
+      return () => ctx.revert();
+    }, 100); // Small delay to ensure virtual items are rendered
+
+    return () => clearTimeout(timer);
   }, [newsItems, prefersReducedMotion]);
 
   return (

@@ -266,8 +266,9 @@ const AuthLoginPage = () => {
 
               {/* 记住我 & 忘记密码 */}
               <div className="flex items-center justify-between">
-                <label className="flex items-center gap-2 cursor-pointer">
+                <label className="flex items-center gap-2 cursor-pointer" htmlFor="remember-me">
                   <input
+                    id="remember-me"
                     type="checkbox"
                     checked={remember}
                     onChange={(e) => setRemember(e.target.checked)}

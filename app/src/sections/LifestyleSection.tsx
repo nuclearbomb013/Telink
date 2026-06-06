@@ -171,7 +171,7 @@ const LifestyleSection = () => {
                 }}
                 aria-label={`${article.title} - ${article.excerpt}`}
               >
-                <div className="w-[240px] sm:w-[280px] lg:w-[300px] bg-white p-3 shadow-xl">
+                <div className="w-[180px] sm:w-[240px] lg:w-[300px] bg-white p-3 shadow-xl">
                   {/* Image */}
                   <div className="aspect-[2/3] overflow-hidden mb-3">
                     <img

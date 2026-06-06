@@ -1,9 +1,14 @@
 """
 Authentication API Endpoints
+
+Security:
+- Refresh tokens stored as HttpOnly + Secure + SameSite cookies
+- Access tokens returned in response body (stored in frontend memory only)
+- CSRF protected via SameSite cookie attribute
 """
 
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import hashlib
@@ -24,19 +29,60 @@ from app.schemas import (
     ResetPasswordRequest
 )
 from app.core.security import TokenManager, PasswordManager, validate_username
+from app.config import settings
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+# Cookie configuration for refresh token
+REFRESH_TOKEN_COOKIE = "refresh_token"  # nosec B105  # Cookie name, not a credential
+REFRESH_TOKEN_MAX_AGE = 60 * 60 * 24 * 30  # 30 days in seconds
+
+
+def _set_refresh_token_cookie(response: Response, token: str, remember: bool = True):
+    """Set refresh token as HttpOnly + Secure + SameSite cookie."""
+    max_age = REFRESH_TOKEN_MAX_AGE if remember else 60 * 60 * 24 * 7
+    response.set_cookie(
+        key=REFRESH_TOKEN_COOKIE,
+        value=token,
+        httponly=True,
+        secure=settings.ENVIRONMENT == "production",
+        samesite="lax",
+        max_age=max_age,
+        path="/api/v1/auth",  # Only sent to auth endpoints
+    )
+
+
+def _clear_refresh_token_cookie(response: Response):
+    """Clear the refresh token cookie."""
+    response.delete_cookie(
+        key=REFRESH_TOKEN_COOKIE,
+        path="/api/v1/auth",
+        httponly=True,
+        secure=settings.ENVIRONMENT == "production",
+        samesite="lax",
+    )
+
+
+def _get_refresh_token_from_request(request: Request) -> str | None:
+    """Extract refresh token from HttpOnly cookie or request body."""
+    # Try cookie first (preferred - HttpOnly)
+    cookie_token = request.cookies.get(REFRESH_TOKEN_COOKIE)
+    if cookie_token:
+        return cookie_token
+    return None
 
 
 @router.post("/login", response_model=ServiceResponse[AuthResponse])
 async def login(
     credentials: LoginCredentials,
+    response: Response,
     db: AsyncSession = Depends(get_db)
 ):
     """
     User login.
 
-    Returns access token and user info on success.
+    Returns access token and user info in response body.
+    Sets refresh token as HttpOnly cookie.
     Uses constant-time comparison to prevent timing attacks.
     """
     # Find user by username or email
@@ -48,16 +94,12 @@ async def login(
     user = result.scalar_one_or_none()
 
     # Timing attack prevention: always verify password even if user doesn't exist
-    # This ensures consistent response time regardless of user existence
-    # P9-107: Use a valid bcrypt hash to ensure full comparison is performed
-    # This is a pre-computed hash for "dummy_password" that bcrypt can properly verify
     dummy_hash = "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.VTt.qW8uM/qnNa"
     password_hash = user.password_hash if user else dummy_hash
 
     # Verify password (constant-time comparison)
     password_valid = PasswordManager.verify_password(credentials.password, password_hash)
 
-    # Check both user existence and password validity
     if not user or not password_valid:
         return ServiceResponse(
             success=False,
@@ -80,7 +122,7 @@ async def login(
     access_token = TokenManager.create_access_token(str(user.id), remember=credentials.remember)
     refresh_token = TokenManager.create_refresh_token(str(user.id))
 
-    # Store refresh token hash
+    # Store refresh token hash in DB
     token_hash = TokenManager.hash_token(refresh_token)
     expires_at = int((datetime.now(timezone.utc) + timedelta(days=30)).timestamp() * 1000)
 
@@ -95,6 +137,10 @@ async def login(
     user.updated_at = utcnow_naive()
     await db.commit()
 
+    # Set refresh token as HttpOnly cookie (P0-4: prevent XSS theft)
+    _set_refresh_token_cookie(response, refresh_token, remember=credentials.remember)
+
+    # Return access token in body only (stored in frontend memory, not localStorage)
     return ServiceResponse(
         success=True,
         data=AuthResponse(
@@ -107,7 +153,7 @@ async def login(
             ),
             token=TokenData(
                 accessToken=access_token,
-                refreshToken=refresh_token,
+                refreshToken="",  # refresh token is in HttpOnly cookie, not body
                 expiresIn=604800 if not credentials.remember else 2592000
             )
         )
@@ -117,6 +163,7 @@ async def login(
 @router.post("/register", response_model=ServiceResponse[AuthResponse])
 async def register(
     credentials: RegisterCredentials,
+    response: Response,
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -190,6 +237,9 @@ async def register(
     db.add(db_token)
     await db.commit()
 
+    # Set refresh token as HttpOnly cookie (P0-4)
+    _set_refresh_token_cookie(response, refresh_token, remember=True)
+
     return ServiceResponse(
         success=True,
         data=AuthResponse(
@@ -202,8 +252,8 @@ async def register(
             ),
             token=TokenData(
                 accessToken=access_token,
-                refreshToken=refresh_token,
-                expiresIn=2592000  # 30 days (remember=True)
+                refreshToken="",  # In HttpOnly cookie
+                expiresIn=2592000
             )
         )
     )
@@ -212,13 +262,15 @@ async def register(
 @router.post("/logout", response_model=ServiceResponse)
 async def logout(
     request: Request,
+    response: Response,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
     User logout.
 
-    Revokes the current access token and all refresh tokens for the user.
+    Revokes the current access token and all refresh tokens.
+    Clears the refresh token HttpOnly cookie.
     """
     # Get the current access token from headers
     auth_header = request.headers.get("Authorization", "")
@@ -252,21 +304,44 @@ async def logout(
 
     await db.commit()
 
+    # Clear refresh token HttpOnly cookie (P0-4)
+    _clear_refresh_token_cookie(response)
+
     return ServiceResponse(success=True, data={"message": "Logged out successfully"})
 
 
 @router.post("/refresh", response_model=ServiceResponse[TokenData])
 async def refresh_token(
-    request: RefreshTokenRequest,
+    request: Request,
+    response: Response,
+    body: RefreshTokenRequest | None = None,
     db: AsyncSession = Depends(get_db)
 ):
     """
     Refresh access token.
 
-    Validates refresh token and returns new access token.
+    Reads refresh token from HttpOnly cookie (preferred) or request body (fallback).
+    Returns new access token in response body.
+    Sets new refresh token as HttpOnly cookie.
     """
+    # Prefer HttpOnly cookie for refresh token (P0-4)
+    refresh_token_str = _get_refresh_token_from_request(request)
+
+    # Fallback to request body for backward compatibility
+    if not refresh_token_str and body and body.refreshToken:
+        refresh_token_str = body.refreshToken
+
+    if not refresh_token_str:
+        return ServiceResponse(
+            success=False,
+            error={
+                "code": "INVALID_TOKEN",
+                "message": "No refresh token provided"
+            }
+        )
+
     # Verify refresh token
-    user_id = TokenManager.verify_token(request.refreshToken, "refresh")
+    user_id = TokenManager.verify_token(refresh_token_str, "refresh")
     if not user_id:
         return ServiceResponse(
             success=False,
@@ -277,7 +352,7 @@ async def refresh_token(
         )
 
     # Check if token is revoked
-    token_hash = TokenManager.hash_token(request.refreshToken)
+    token_hash = TokenManager.hash_token(refresh_token_str)
     result = await db.execute(
         select(RefreshToken).where(
             RefreshToken.token_hash == token_hash,
@@ -337,11 +412,14 @@ async def refresh_token(
     db.add(new_db_token)
     await db.commit()
 
+    # Set new refresh token as HttpOnly cookie (P0-4)
+    _set_refresh_token_cookie(response, new_refresh_token, remember=True)
+
     return ServiceResponse(
         success=True,
         data=TokenData(
             accessToken=access_token,
-            refreshToken=new_refresh_token,
+            refreshToken="",  # In HttpOnly cookie
             expiresIn=604800  # 7 days
         )
     )

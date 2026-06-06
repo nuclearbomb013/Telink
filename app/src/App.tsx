@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { ScrollTrigger } from '@/lib/gsap';
 
@@ -14,25 +14,38 @@ import SkipToContent from '@/components/SkipToContent';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import Navigation from '@/sections/Navigation';
 import Footer from '@/sections/Footer';
+// P2-9: Eagerly load home page (critical path), lazy load other routes
 import HomePage from '@/pages/HomePage';
-import ArticlesListPage from '@/pages/ArticlesListPage';
-import ArticleDetailPage from '@/pages/ArticleDetailPage';
-import SubmitArticlePage from '@/pages/SubmitArticlePage';
-import ForumListPage from '@/pages/ForumListPage';
-import ForumPostPage from '@/pages/ForumPostPage';
-import ForumCreatePage from '@/pages/ForumCreatePage';
-import UserProfilePage from '@/pages/UserProfilePage';
-import ProfileEditPage from '@/pages/ProfileEditPage';
-import ForumEditPage from '@/pages/ForumEditPage';
-import AuthLoginPage from '@/pages/AuthLoginPage';
-import AuthRegisterPage from '@/pages/AuthRegisterPage';
-import AuthForgotPassword from '@/pages/AuthForgotPassword';
-import NewsTimeline from '@/components/News/NewsTimeline';
-import DeveloperShowcaseSection from '@/sections/DeveloperShowcaseSection';
-import MomentsPage from '@/pages/MomentsPage';
-import MessagesPage from '@/pages/MessagesPage';
-import ChatPage from '@/pages/ChatPage';
 import { syncCacheWithDb } from '@/lib/cache';
+
+// P2-9: Route-level lazy loading for code splitting
+const ArticlesListPage = lazy(() => import('@/pages/ArticlesListPage'));
+const ArticleDetailPage = lazy(() => import('@/pages/ArticleDetailPage'));
+const SubmitArticlePage = lazy(() => import('@/pages/SubmitArticlePage'));
+const ForumListPage = lazy(() => import('@/pages/ForumListPage'));
+const ForumPostPage = lazy(() => import('@/pages/ForumPostPage'));
+const ForumCreatePage = lazy(() => import('@/pages/ForumCreatePage'));
+const ForumEditPage = lazy(() => import('@/pages/ForumEditPage'));
+const UserProfilePage = lazy(() => import('@/pages/UserProfilePage'));
+const ProfileEditPage = lazy(() => import('@/pages/ProfileEditPage'));
+const AuthLoginPage = lazy(() => import('@/pages/AuthLoginPage'));
+const AuthRegisterPage = lazy(() => import('@/pages/AuthRegisterPage'));
+const AuthForgotPassword = lazy(() => import('@/pages/AuthForgotPassword'));
+const NewsTimeline = lazy(() => import('@/components/News/NewsTimeline'));
+const DeveloperShowcaseSection = lazy(() => import('@/sections/DeveloperShowcaseSection'));
+const MomentsPage = lazy(() => import('@/pages/MomentsPage'));
+const MessagesPage = lazy(() => import('@/pages/MessagesPage'));
+const ChatPage = lazy(() => import('@/pages/ChatPage'));
+const NotFoundPage = lazy(() => import('@/pages/NotFoundPage'));
+const TermsPage = lazy(() => import('@/pages/TermsPage'));
+const PrivacyPage = lazy(() => import('@/pages/PrivacyPage'));
+
+/** Loading fallback for lazy routes */
+const PageLoader = () => (
+  <div className="min-h-screen bg-brand-linen flex items-center justify-center">
+    <div className="w-8 h-8 border-2 border-brand-border border-t-brand-text rounded-full animate-spin" />
+  </div>
+);
 
 /**
  * Main App Component
@@ -127,6 +140,7 @@ function App() {
 
           {/* Main content */}
           <main id="main-content" tabIndex={-1}>
+            <Suspense fallback={<PageLoader />}>
             <Routes>
               {/* 首页和文章 */}
               <Route path="/" element={<HomePage />} />
@@ -198,7 +212,15 @@ function App() {
               <Route path="/login" element={<AuthLoginPage />} />
               <Route path="/register" element={<AuthRegisterPage />} />
               <Route path="/forgot-password" element={<AuthForgotPassword />} />
+
+              {/* 法律页面 */}
+              <Route path="/terms" element={<TermsPage />} />
+              <Route path="/privacy" element={<PrivacyPage />} />
+
+              {/* P0-2: 404 catch-all route */}
+              <Route path="*" element={<NotFoundPage />} />
             </Routes>
+            </Suspense>
           </main>
 
           {/* Footer - Curtain Reveal */}

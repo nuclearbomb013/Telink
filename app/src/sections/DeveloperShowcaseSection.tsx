@@ -189,7 +189,7 @@ export const DeveloperShowcaseSection: React.FC = () => {
   }
 
   return (
-    <section className="container mx-auto px-4 py-12" aria-labelledby="developers-heading">
+    <section className="max-w-[1600px] mx-auto px-6 lg:px-12 py-20 lg:py-32" aria-labelledby="developers-heading">
       <div className="text-center mb-12">
         <h2 id="developers-heading" className="font-oswald font-light text-3xl md:text-4xl text-brand-text mb-4">优秀开发者</h2>
         <p className="text-brand-dark-gray max-w-2xl mx-auto">
@@ -351,7 +351,7 @@ export const DeveloperShowcaseSection: React.FC = () => {
                 搜索开发者 <Search size={18} />
               </button>
               {Object.keys(currentFilters).some(key =>
-                (currentFilters as any)[key] !== defaultFilters[key as keyof DeveloperFilter]
+                currentFilters[key as keyof typeof currentFilters] !== defaultFilters[key as keyof DeveloperFilter]
               ) ||
               currentSort.field !== defaultSort.field ||
               currentSort.direction !== defaultSort.direction ? (

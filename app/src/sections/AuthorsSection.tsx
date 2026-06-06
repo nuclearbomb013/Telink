@@ -86,13 +86,12 @@ const AuthorsSection = () => {
     const totalAuthors = authors.length;
     const relativeIndex = (index - activeIndex + totalAuthors) % totalAuthors;
 
-    // Normalize to -2 to 2 range for 5 items
     let normalizedIndex = relativeIndex;
     if (normalizedIndex > totalAuthors / 2) {
       normalizedIndex -= totalAuthors;
     }
 
-    const radius = 450;
+    const radius = window.innerWidth >= 1024 ? 450 : window.innerWidth >= 768 ? 350 : window.innerWidth >= 640 ? 280 : 200;
     const x = normalizedIndex * (radius / 2);
 
     const scale = normalizedIndex === 0 ? 1.5 : 1 - Math.abs(normalizedIndex) * 0.15;

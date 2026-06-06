@@ -43,7 +43,7 @@ const ImageGrid = ({ images }: { images: MomentImage[] }) => {
           <img
             src={images[0].url}
             alt={images[0].caption || '动态图片'}
-            className="w-full max-h-80 object-cover grayscale contrast-125 hover:grayscale-0 transition-all duration-700"
+            className="w-full max-h-80 object-cover transition-all duration-700"
             loading="lazy"
           />
           {images[0].caption && (
@@ -68,7 +68,7 @@ const ImageGrid = ({ images }: { images: MomentImage[] }) => {
             <img
               src={img.url}
               alt={img.caption || `图片 ${index + 1}`}
-              className="w-full h-full object-cover grayscale contrast-125 hover:grayscale-0 transition-all duration-700"
+              className="w-full h-full object-cover transition-all duration-700"
               loading="lazy"
             />
           </div>
@@ -89,7 +89,7 @@ const ImageGrid = ({ images }: { images: MomentImage[] }) => {
             <img
               src={img.url}
               alt={img.caption || `图片 ${index + 1}`}
-              className="w-full h-full object-cover grayscale contrast-125 hover:grayscale-0 transition-all duration-700"
+              className="w-full h-full object-cover transition-all duration-700"
               loading="lazy"
             />
           </div>
@@ -109,7 +109,7 @@ const ImageGrid = ({ images }: { images: MomentImage[] }) => {
           <img
             src={img.url}
             alt={img.caption || `图片 ${index + 1}`}
-            className="w-full h-full object-cover grayscale contrast-125 hover:grayscale-0 transition-all duration-700"
+            className="w-full h-full object-cover transition-all duration-700"
             loading="lazy"
           />
           {index === 8 && count > 9 && (

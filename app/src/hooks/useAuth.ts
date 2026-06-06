@@ -64,7 +64,7 @@ interface UseAuthReturn {
  */
 export function useAuth(): UseAuthReturn {
   // 从 AuthContext 获取状态，确保全局一致
-  const { currentUser, isAuthenticated, login: contextLogin, logout: contextLogout, refreshAuthStatus } = useAuthContext();
+  const { currentUser, isAuthenticated, login: contextLogin, logout: contextLogout, refreshAuthStatus, error, clearError: contextClearError } = useAuthContext();
 
   /**
    * 登录 - 使用 AuthContext 的登录方法
@@ -150,11 +150,11 @@ export function useAuth(): UseAuthReturn {
   );
 
   /**
-   * 清除错误 - 暂时返回空实现，因为 AuthContext 没有错误状态
+   * 清除错误 - 委托给 AuthContext
    */
   const clearError = useCallback(() => {
-    // AuthContext 目前没有暴露错误状态
-  }, []);
+    contextClearError();
+  }, [contextClearError]);
 
   /**
    * 重新加载用户
@@ -167,8 +167,8 @@ export function useAuth(): UseAuthReturn {
     // 状态
     user: currentUser,
     isAuthenticated,
-    isLoading: false, // AuthContext 已经处理了加载状态
-    error: null, // AuthContext 目前没有暴露错误状态
+    isLoading: false, // AuthContext handles loading internally, consumers check ProtectedRoute
+    error, // 从 AuthContext 透传错误状态
 
     // 方法
     login,

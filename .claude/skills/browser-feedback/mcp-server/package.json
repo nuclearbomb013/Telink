@@ -1,0 +1,21 @@
+{
+  "name": "browser-feedback-mcp",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "MCP server providing browser feedback (screenshot, console, network, DOM, metrics, a11y) via Playwright + Chromium",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "build": "tsc",
+    "postinstall": "npx playwright install chromium --with-deps 2>/dev/null || echo 'Run: npx playwright install chromium'"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "playwright": "^1.50.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}

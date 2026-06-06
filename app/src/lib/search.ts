@@ -20,6 +20,7 @@ export interface SearchOptions {
  * 可搜索的数据结构
  */
 export interface SearchableItem {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any;
 }
 
@@ -88,7 +89,7 @@ export function simpleSearch<T extends SearchableItem>(
       if (value === null || value === undefined) continue;
 
       // 处理数组类型（如 tags）
-      const values = Array.isArray(value) ? value : [value] as any[];
+      const values: unknown[] = Array.isArray(value) ? value : [value];
 
       for (const v of values) {
         const textValue = String(v);
@@ -242,7 +243,7 @@ function escapeRegex(string: string): string {
 /**
  * 防抖函数
  */
-export function debounce<T extends (...args: any[]) => any>(
+export function debounce<T extends (...args: never[]) => unknown>(
   func: T,
   wait: number
 ): (...args: Parameters<T>) => void {

@@ -2,10 +2,17 @@
  * API Client - 统一的后端 API 客户端
  *
  * 用于与后端 FastAPI 服务通信
+ *
+ * Security (P0-4):
+ * - Access token stored in module-level memory only (NOT localStorage)
+ * - Refresh token stored in HttpOnly cookie (set by backend)
+ * - CSRF protection via SameSite cookie + Authorization header
  */
 
 // API 基础 URL
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+// In production, VITE_API_URL must be set via environment variable.
+// Fallback to relative path (uses Vite dev server proxy) when VITE_API_URL is not set.
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
 /**
  * 统一的服务响应格式
@@ -23,41 +30,25 @@ export interface ServiceResponse<T = unknown> {
 
 /**
  * API 客户端类
+ * P0-4: Access token stored in memory only, never in localStorage.
+ * Refresh token is handled via HttpOnly cookies by the backend.
  */
 class ApiClient {
   private baseUrl: string;
+  /** P0-4: Access token stored in module-level variable (memory only) */
   private accessToken: string | null = null;
+  private isRefreshing = false;
+  private refreshPromise: Promise<string | null> | null = null;
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl;
-    this.loadToken();
   }
 
   /**
-   * 从 localStorage 加载 Token
-   */
-  private loadToken(): void {
-    const stored = localStorage.getItem('techink_auth_token');
-    if (stored) {
-      try {
-        const tokenData = JSON.parse(stored);
-        this.accessToken = tokenData.accessToken || tokenData;
-      } catch {
-        this.accessToken = stored;
-      }
-    }
-  }
-
-  /**
-   * 设置访问 Token
+   * 设置访问 Token (memory only, no localStorage)
    */
   setToken(token: string | null): void {
     this.accessToken = token;
-    if (token) {
-      localStorage.setItem('techink_auth_token', token);
-    } else {
-      localStorage.removeItem('techink_auth_token');
-    }
   }
 
   /**
@@ -68,15 +59,60 @@ class ApiClient {
   }
 
   /**
-   * 清除 Token
+   * 清除 Token (memory only)
    */
   clearToken(): void {
     this.accessToken = null;
-    localStorage.removeItem('techink_auth_token');
+  }
+
+  /**
+   * 尝试刷新 Token（Promise 锁防止并发刷新）
+   * P0-4: Refresh token is in HttpOnly cookie, sent automatically via credentials: 'include'
+   */
+  async tryRefreshToken(): Promise<string | null> {
+    if (this.isRefreshing && this.refreshPromise) {
+      return this.refreshPromise;
+    }
+
+    this.isRefreshing = true;
+    this.refreshPromise = (async () => {
+      try {
+        // P0-4: Refresh token is in HttpOnly cookie, no need to send in body
+        const response = await fetch(`${this.baseUrl}/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',  // Send HttpOnly cookie
+          body: JSON.stringify({}),  // Empty body, token comes from cookie
+        });
+
+        if (!response.ok) {
+          this.clearToken();
+          // Clear user data on refresh failure
+          localStorage.removeItem('techink_current_user');
+          return null;
+        }
+
+        const data = await response.json();
+        if (data.success && data.data?.accessToken) {
+          // Store new access token in memory only (P0-4)
+          this.setToken(data.data.accessToken);
+          return data.data.accessToken;
+        }
+        return null;
+      } catch {
+        return null;
+      } finally {
+        this.isRefreshing = false;
+        this.refreshPromise = null;
+      }
+    })();
+
+    return this.refreshPromise;
   }
 
   /**
    * 发起 HTTP 请求
+   * P0-4: Uses credentials: 'include' to send HttpOnly refresh token cookie
    */
   private async request<T>(
     endpoint: string,
@@ -97,11 +133,33 @@ class ApiClient {
       const response = await fetch(url, {
         ...options,
         headers,
+        credentials: 'include',  // P0-4: Send HttpOnly cookies
       });
 
       const data = await response.json();
 
       if (!response.ok) {
+        // Auto-refresh token on 401 (exclude auth endpoints to prevent loops)
+        if (response.status === 401 && !endpoint.startsWith('/auth/')) {
+          const newToken = await this.tryRefreshToken();
+          if (newToken) {
+            const retryHeaders = { ...headers, 'Authorization': `Bearer ${newToken}` };
+            const retryRsp = await fetch(url, { ...options, headers: retryHeaders, credentials: 'include' });
+            if (retryRsp.ok) return retryRsp.json();
+            const retryData = await retryRsp.json();
+            return {
+              success: false,
+              error: retryData.error || {
+                code: 'HTTP_ERROR',
+                message: `HTTP Error: ${retryRsp.status}`,
+              },
+              timestamp: Date.now(),
+            };
+          }
+          this.clearToken();
+          localStorage.removeItem('techink_current_user');
+        }
+
         return {
           success: false,
           error: data.error || {
@@ -175,25 +233,54 @@ class ApiClient {
 
   /**
    * 上传文件 (multipart/form-data)
+   * P0-4: Uses credentials: 'include' for HttpOnly cookie.
+   * Includes 401 auto-refresh with FormData re-creation.
    */
   async uploadFile<T>(endpoint: string, file: File, fieldName = 'file'): Promise<ServiceResponse<T>> {
     const url = `${this.baseUrl}${endpoint}`;
 
-    const formData = new FormData();
-    formData.append(fieldName, file);
+    const buildHeaders = (): Record<string, string> => {
+      const h: Record<string, string> = {};
+      if (this.accessToken) {
+        h['Authorization'] = `Bearer ${this.accessToken}`;
+      }
+      return h;
+    };
 
-    const headers: Record<string, string> = {};
-    if (this.accessToken) {
-      headers['Authorization'] = `Bearer ${this.accessToken}`;
-    }
+    const buildFormData = (): FormData => {
+      const fd = new FormData();
+      fd.append(fieldName, file);
+      return fd;
+    };
+
     // Note: Don't set Content-Type for FormData - browser will set it automatically
 
     try {
-      const response = await fetch(url, {
+      let response = await fetch(url, {
         method: 'POST',
-        headers,
-        body: formData,
+        headers: buildHeaders(),
+        body: buildFormData(),
+        credentials: 'include',  // P0-4: Send HttpOnly cookie
       });
+
+      // P0-4: Auto-refresh on 401 (re-create FormData since it's consumed)
+      if (response.status === 401 && !endpoint.startsWith('/auth/')) {
+        const newToken = await this.tryRefreshToken();
+        if (newToken) {
+          this.setToken(newToken);
+          const retryRsp = await fetch(url, {
+            method: 'POST',
+            headers: buildHeaders(),
+            body: buildFormData(),  // Re-create FormData from original File
+            credentials: 'include',
+          });
+          if (retryRsp.ok) return retryRsp.json();
+          response = retryRsp;
+        } else {
+          this.clearToken();
+          localStorage.removeItem('techink_current_user');
+        }
+      }
 
       const data = await response.json();
 
@@ -862,8 +949,8 @@ export const uploadApi = {
    * 上传图片
    */
   uploadImage: async (file: File): Promise<ServiceResponse<UploadResponse>> => {
-    // Use public endpoint for testing (will require auth in production)
-    const response = await apiClient.uploadFile<UploadResponseRaw>('/upload/image-public', file);
+    // Use authenticated endpoint (requires valid JWT token)
+    const response = await apiClient.uploadFile<UploadResponseRaw>('/upload/image', file);
     if (response.success && response.data) {
       return {
         success: true,
@@ -883,6 +970,70 @@ export const uploadApi = {
       timestamp: response.timestamp,
     };
   },
+};
+
+// ==================== 动态 (Moments) API ====================
+
+export interface CreateMomentData {
+  content: string;
+  contentType?: string;
+  visibility?: string;
+  codeSnippet?: { filename: string; language: string; code: string };
+  images?: Array<{ url: string; alt?: string }>;
+  location?: string;
+}
+
+export interface MomentData {
+  id: number;
+  author_id: number;
+  author_name: string;
+  author_avatar?: string;
+  content: string;
+  content_type: string;
+  code_snippet?: { filename: string; language: string; code: string } | null;
+  images?: Array<{ url: string; alt: string }> | null;
+  visibility: string;
+  location?: string | null;
+  likes: number;
+  comment_count: number;
+  is_liked: boolean;
+  created_at: number;
+  updated_at?: number | null;
+}
+
+export interface MomentListResult {
+  moments: MomentData[];
+  total: number;
+  page: number;
+  limit: number;
+  has_more: boolean;
+}
+
+export const momentApi = {
+  getMoments: (params?: { page?: number; limit?: number; sort_by?: string; user_id?: number }) =>
+    apiClient.get<MomentListResult>('/moments', params as Record<string, string | number>),
+
+  createMoment: (data: CreateMomentData) =>
+    apiClient.post<MomentData>('/moments', data),
+
+  updateMoment: (id: number, data: Partial<CreateMomentData>) =>
+    apiClient.put<MomentData>(`/moments/${id}`, data),
+
+  deleteMoment: (id: number) =>
+    apiClient.delete(`/moments/${id}`),
+
+  toggleLike: (momentId: number) =>
+    apiClient.post<{ liked: boolean; likes: number }>(`/moments/${momentId}/like`),
+
+  // Comment endpoints
+  getComments: (momentId: number) =>
+    apiClient.get<Record<string, unknown>[]>(`/moments/${momentId}/comments`),
+
+  createComment: (momentId: number, data: { content: string; reply_to_id?: number; reply_to_name?: string }) =>
+    apiClient.post<Record<string, unknown>>(`/moments/${momentId}/comments`, data),
+
+  deleteComment: (momentId: number, commentId: number) =>
+    apiClient.delete(`/moments/${momentId}/comments/${commentId}`),
 };
 
 export default apiClient;

@@ -7,7 +7,6 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
-from fastapi.staticfiles import StaticFiles
 import uuid
 import time
 import os
@@ -190,11 +189,25 @@ def create_app() -> FastAPI:
     # Include API routers
     app.include_router(api_router, prefix="/api/v1")
 
-    # Configure static files for uploads
+    # Configure static files for uploads with security headers
+    # P1-8: Serve uploads with X-Content-Type-Options to prevent MIME sniffing
     upload_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
     images_dir = os.path.join(upload_dir, "images")
     os.makedirs(images_dir, exist_ok=True)
-    app.mount("/uploads", StaticFiles(directory=upload_dir), name="uploads")
+
+    # Use a custom StaticFiles subclass that adds security headers
+    from starlette.staticfiles import StaticFiles as _StaticFiles
+    from starlette.responses import Response
+
+    class SecureStaticFiles(_StaticFiles):
+        """StaticFiles with security headers for uploaded content."""
+        async def get_response(self, path: str, scope) -> Response:
+            response = await super().get_response(path, scope)
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            response.headers["Cache-Control"] = "public, max-age=86400"
+            return response
+
+    app.mount("/uploads", SecureStaticFiles(directory=upload_dir), name="uploads")
     logger.info("static_files_configured", upload_dir=upload_dir)
 
     # Health check endpoint
@@ -217,7 +230,9 @@ def create_app() -> FastAPI:
             health_status["checks"]["database"] = "connected"
         except Exception as e:
             health_status["status"] = "unhealthy"
-            health_status["checks"]["database"] = f"error: {str(e)}"
+            # P0-5: Don't expose internal error details in production
+            health_status["checks"]["database"] = "error" if settings.DEBUG else "disconnected"
+            logger.error("health_check_db_error", error=str(e))
 
         return health_status
 

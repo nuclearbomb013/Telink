@@ -49,9 +49,19 @@
   * {
     @apply border-border;
   }
-  
+
+  a, button, input, select, textarea {
+    touch-action: manipulation;
+  }
+
   html {
     scroll-behavior: smooth;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
   }
   
   body {
@@ -103,8 +113,9 @@
   }
   
   /* Custom cursor - elegant ink style */
-  .cursor-custom {
-    cursor: none;
+  .cursor-custom,
+  .cursor-custom * {
+    cursor: none !important;
   }
   
   /* Primary cursor dot - small and precise */

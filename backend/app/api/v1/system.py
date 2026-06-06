@@ -89,27 +89,14 @@ async def sync_reply_counts(
     """
     Sync reply_count values for all posts.
     Recalculates based on actual non-deleted comments.
-
     Requires admin privileges.
     """
-    # Check admin permission
     if current_user.role.value != UserRole.ADMIN.value:
         return ServiceResponse(
             success=False,
             error={"code": "FORBIDDEN", "message": "Admin privileges required"}
         )
 
-    return await _do_sync_reply_counts(db)
-
-
-@router.post("/sync-reply-counts-public", response_model=ServiceResponse[SyncReplyCountResponse])
-async def sync_reply_counts_public(
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Public endpoint for sync reply_count values (development only).
-    Recalculates based on actual non-deleted comments.
-    """
     return await _do_sync_reply_counts(db)
 
 
@@ -168,12 +155,18 @@ class SeedDemoDataResponse(BaseModel):
 
 @router.post("/seed-demo-data", response_model=ServiceResponse[SeedDemoDataResponse])
 async def seed_demo_data(
+    current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Create demo posts with comments for testing.
-    Only creates data if there are fewer than 5 posts.
+    Requires admin privileges. Only creates data if there are fewer than 5 posts.
     """
+    if current_user.role.value != UserRole.ADMIN.value:
+        return ServiceResponse(
+            success=False,
+            error={"code": "FORBIDDEN", "message": "Admin privileges required"}
+        )
     # Check if we need to create demo data
     result = await db.execute(select(func.count(Post.id)))
     post_count = result.scalar()

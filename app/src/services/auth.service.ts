@@ -3,6 +3,11 @@
  *
  * 提供用户登录、注册、登出、密码重置等功能
  * 连接后端 FastAPI API
+ *
+ * Security (P0-4):
+ * - Access token stored in ApiClient memory only (never localStorage)
+ * - Refresh token stored in HttpOnly cookie (set by backend)
+ * - Only non-sensitive user profile cached in localStorage for UI persistence
  */
 
 import type {
@@ -25,10 +30,11 @@ import {
 
 /**
  * localStorage 键名
+ * P0-4: Only CURRENT_USER is stored locally (non-sensitive profile info).
+ * Tokens are stored in memory (access) and HttpOnly cookie (refresh).
  */
 const STORAGE_KEYS = {
   CURRENT_USER: 'techink_current_user',
-  REFRESH_TOKEN: 'techink_refresh_token',
 } as const;
 
 /**
@@ -49,7 +55,7 @@ class AuthService {
   }
 
   /**
-   * 加载当前用户
+   * 加载当前用户缓存（仅用于 UI 显示，不恢复 token）
    */
   private loadCurrentUser(): void {
     try {
@@ -63,7 +69,7 @@ class AuthService {
   }
 
   /**
-   * 保存当前用户
+   * 保存当前用户缓存
    */
   private saveCurrentUser(user: CurrentUser): void {
     localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(user));
@@ -72,11 +78,13 @@ class AuthService {
 
   /**
    * 清除当前用户
+   * P0-4: Only clears localStorage user cache and memory token.
+   * Refresh token cookie is cleared by backend on logout.
    */
   private clearCurrentUser(): void {
     localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
-    localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
     this.currentUser = null;
+    apiClient.clearToken();
   }
 
   /**
@@ -245,9 +253,9 @@ class AuthService {
 
       const { user, token } = response.data;
 
-      // 保存认证状态
+      // P0-4: Access token in memory only, refresh token in HttpOnly cookie
       apiClient.setToken(token.accessToken);
-      localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, token.refreshToken);
+      // Refresh token is automatically stored as HttpOnly cookie by backend
       const currentUser = this.mapApiUserToCurrentUser(user);
       this.saveCurrentUser(currentUser);
 
@@ -327,9 +335,9 @@ class AuthService {
 
       const { user, token } = response.data;
 
-      // 保存认证状态
+      // P0-4: Access token in memory only, refresh token in HttpOnly cookie
       apiClient.setToken(token.accessToken);
-      localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, token.refreshToken);
+      // Refresh token is automatically stored as HttpOnly cookie by backend
       const currentUser = this.mapApiUserToCurrentUser(user);
       this.saveCurrentUser(currentUser);
 
@@ -475,19 +483,12 @@ class AuthService {
 
   /**
    * 刷新 Token
+   * P0-4: Refresh token is in HttpOnly cookie, sent automatically
    */
   async refreshToken(): Promise<AuthServiceResponse<AuthToken>> {
     try {
-      const refreshToken = localStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
-      if (!refreshToken) {
-        return {
-          success: false,
-          error: { code: 'NOT_AUTHENTICATED', message: '未登录' },
-          timestamp: Date.now(),
-        };
-      }
-
-      const response = await authApi.refresh(refreshToken);
+      // P0-4: Empty body - refresh token comes from HttpOnly cookie
+      const response = await authApi.refresh('');
 
       if (!response.success || !response.data) {
         // 刷新失败，清理状态
@@ -502,8 +503,9 @@ class AuthService {
       }
 
       const tokenData = response.data;
+      // P0-4: Access token in memory only
       apiClient.setToken(tokenData.accessToken);
-      localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, tokenData.refreshToken);
+      // New refresh token is automatically set as HttpOnly cookie by backend
 
       return {
         success: true,

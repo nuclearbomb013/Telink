@@ -65,7 +65,22 @@
       "Bash(E:/KIMI_web/.venv/Scripts/ruff.exe check:*)",
       "Bash(E:/KIMI_web/.venv/Scripts/mypy.exe:*)",
       "Bash(cat:*)",
-      "Bash(\"E:/KIMI_web/.venv/Scripts/pytest.exe\":*)"
+      "Bash(\"E:/KIMI_web/.venv/Scripts/pytest.exe\":*)",
+      "mcp__postgres-explorer__db_query",
+      "mcp__browser-feedback__browser_navigate",
+      "mcp__browser-feedback__browser_screenshot",
+      "mcp__browser-feedback__browser_get_console",
+      "mcp__browser-feedback__browser_get_metrics",
+      "mcp__browser-feedback__browser_reload",
+      "mcp__browser-feedback__browser_get_network",
+      "mcp__browser-feedback__browser_check_a11y",
+      "mcp__postgres-explorer__db_tables",
+      "mcp__browser-feedback__browser_evaluate",
+      "mcp__postgres-explorer__db_schema"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "browser-feedback",
+    "postgres-explorer"
+  ]
 }

@@ -10,9 +10,9 @@
  */
 export const CACHE_KEYS = {
   // Auth (认证相关 - 通常保留)
+  // P0-4: Access token in memory, refresh token in HttpOnly cookie
+  // Only CURRENT_USER is stored in localStorage (non-sensitive profile info)
   CURRENT_USER: 'techink_current_user',
-  REFRESH_TOKEN: 'techink_refresh_token',
-  AUTH_TOKEN: 'techink_auth_token',
 
   // Articles (文章)
   ARTICLES: 'techink_articles',
@@ -69,11 +69,9 @@ interface SystemInfo {
 export function clearAllCache(keepAuth: boolean = true): number {
   const keysToRemove = Object.values(CACHE_KEYS).filter((key) => {
     if (keepAuth) {
-      // 保留认证相关数据
+      // P0-4: Only keep CURRENT_USER (tokens are in memory/cookie)
       const authKeys: string[] = [
         CACHE_KEYS.CURRENT_USER,
-        CACHE_KEYS.REFRESH_TOKEN,
-        CACHE_KEYS.AUTH_TOKEN,
       ];
       return !authKeys.includes(key);
     }
@@ -130,7 +128,7 @@ export function saveDbVersion(version: string): void {
  */
 export async function fetchSystemInfo(): Promise<SystemInfo | null> {
   try {
-    const response = await fetch('/api/v1/system/info');
+    const response = await fetch(`${import.meta.env.VITE_API_URL || '/api/v1'}/system/info`);
     if (!response.ok) {
       console.warn('[Cache] Failed to fetch system info:', response.status);
       return null;

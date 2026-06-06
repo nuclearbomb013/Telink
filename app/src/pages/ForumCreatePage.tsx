@@ -50,6 +50,7 @@ const ForumCreatePage = () => {
   const [isPreview, setIsPreview] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // 图片上传模式：'upload' 或 'url'
   const [imageMode, setImageMode] = useState<'upload' | 'url'>('upload');
@@ -102,38 +103,44 @@ const ForumCreatePage = () => {
     if (!validateForm()) return;
 
     setIsSubmitting(true);
+    setSubmitError(null);
 
-    // 解析标签
-    const tagArray = tags
-      .split(/\s+/)
-      .filter(Boolean)
-      .map(tag => tag.replace('#', ''))
-      .slice(0, 5);
+    try {
+      // 解析标签
+      const tagArray = tags
+        .split(/\s+/)
+        .filter(Boolean)
+        .map(tag => tag.replace('#', ''))
+        .slice(0, 5);
 
-    // 生成摘要
-    const excerpt = content
-      .replace(/[#*`[\]()>-]/g, '')
-      .slice(0, 200) + '...';
+      // 生成摘要
+      const excerpt = content
+        .replace(/[#*`[\]()>-]/g, '')
+        .slice(0, 200) + '...';
 
-    const postData: CreateForumPostData = {
-      title: title.trim(),
-      content: content.trim(),
-      category,
-      tags: tagArray,
-      coverImage: coverImage || undefined,
-      excerpt,
-      authorId: currentUser?.id,
-      authorName: currentUser?.username,
-      authorAvatar: currentUser?.avatar,
-    };
+      const postData: CreateForumPostData = {
+        title: title.trim(),
+        content: content.trim(),
+        category,
+        tags: tagArray,
+        coverImage: coverImage || undefined,
+        excerpt,
+        authorId: currentUser?.id,
+        authorName: currentUser?.username,
+        authorAvatar: currentUser?.avatar,
+      };
 
-    const response = await forumService.createPost(postData);
+      const response = await forumService.createPost(postData);
 
-    if (response.success && response.data) {
-      // 发布成功，跳转到帖子详情页
-      navigate(`/forum/${response.data.slug}`);
-    } else {
-      alert('发布失败：' + response.error?.message);
+      if (response.success) {
+        // 发布成功，跳转到帖子详情页（无 data 时跳到论坛首页）
+        navigate(response.data ? `/forum/${response.data.slug}` : '/forum');
+      } else {
+        setSubmitError(response.error?.message || '发布失败，请稍后重试');
+      }
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : '网络错误，请检查连接后重试');
+    } finally {
       setIsSubmitting(false);
     }
   };
@@ -409,6 +416,11 @@ const ForumCreatePage = () => {
 
             {/* 提交按钮 */}
             <div className="flex items-center justify-end gap-4 pt-6 border-t border-brand-border/30">
+              {submitError && (
+                <div className="flex-1 text-sm text-red-600 bg-red-50 border border-red-200 rounded-sm px-3 py-2" role="alert">
+                  {submitError}
+                </div>
+              )}
               <Button
                 type="button"
                 variant="ghost"

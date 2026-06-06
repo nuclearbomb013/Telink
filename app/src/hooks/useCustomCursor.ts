@@ -63,9 +63,14 @@ export const useCustomCursor = (): CursorReturn => {
   const { prefersReducedMotion, isTouchDevice } = useAnimationPreferences();
 
   // Memoized event handlers
-  const handleMouseMove = useCallback((e: MouseEvent) => {
+      const handleMouseMove = useCallback((e: MouseEvent) => {
+    const wasInvisible = !isVisible;
     mousePos.current = { x: e.clientX, y: e.clientY };
-    if (!isVisible) setIsVisible(true);
+    if (wasInvisible) {
+      dotPos.current = { x: e.clientX, y: e.clientY };
+      ringPos.current = { x: e.clientX, y: e.clientY };
+      setIsVisible(true);
+    }
   }, [isVisible]);
 
   const handleMouseEnter = useCallback(() => setIsVisible(true), []);

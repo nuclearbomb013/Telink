@@ -163,8 +163,8 @@ const ChatWindow = ({
       } else {
         setError(response.error?.message || '加载消息失败');
       }
-    } catch (err: any) {
-      setError(err.message || '加载消息失败');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '操作失败');
     } finally {
       setIsLoading(false);
     }
@@ -216,9 +216,9 @@ const ChatWindow = ({
         setInputValue(content);
         setError(response.error?.message || '发送失败');
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setInputValue(content);
-      setError(err.message || '发送失败');
+      setError(err instanceof Error ? err.message : '发送失败');
     } finally {
       setIsSending(false);
       inputRef.current?.focus();

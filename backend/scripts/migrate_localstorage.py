@@ -78,7 +78,7 @@ async def migrate_users(db, users_data: list) -> dict:
             # Generate a secure random password (16 characters)
             password = secrets.token_urlsafe(12)
             print(f"  WARNING: Generated random password for user '{user_data['username']}': {password}")
-            print(f"           Please notify the user to change their password!")
+            print("           Please notify the user to change their password!")
 
         user = User(
             id=user_data['id'],

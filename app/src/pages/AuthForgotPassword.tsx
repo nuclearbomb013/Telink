@@ -50,7 +50,6 @@ const AuthForgotPassword = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
-  const [mockResetToken, setMockResetToken] = useState<string | null>(null);
 
   /**
    * 验证邮箱
@@ -108,9 +107,6 @@ const AuthForgotPassword = () => {
     const result = await sendPasswordReset(email.trim());
 
     if (result.success) {
-      // Mock: 显示重置令牌（实际应该通过邮件发送）
-      const mockToken = `reset_${Date.now().toString().slice(-6)}`;
-      setMockResetToken(mockToken);
       setStep('verify');
     }
 
@@ -138,15 +134,6 @@ const AuthForgotPassword = () => {
     }
 
     setIsSubmitting(false);
-  };
-
-  /**
-   * 填充 Mock Token
-   */
-  const fillMockToken = () => {
-    if (mockResetToken) {
-      setToken(mockResetToken);
-    }
   };
 
   return (
@@ -247,27 +234,6 @@ const AuthForgotPassword = () => {
             {/* 步骤 2: 输入令牌和新密码 */}
             {step === 'verify' && (
               <>
-                {/* Mock Token 提示 */}
-                <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                  <p className="text-xs text-yellow-800 mb-2">
-                    📧 Mock 模式：重置令牌已生成
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 px-2 py-1 bg-white rounded text-sm font-mono">
-                      {mockResetToken}
-                    </code>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={fillMockToken}
-                      className="text-xs"
-                    >
-                      填充
-                    </Button>
-                  </div>
-                </div>
-
                 <form onSubmit={handleResetPassword} className="space-y-4">
                   {/* 重置令牌 */}
                   <div className="space-y-2">

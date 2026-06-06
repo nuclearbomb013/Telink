@@ -156,7 +156,9 @@ class MessageService {
    * 模拟 API 延迟
    */
   private async simulateDelay(ms = 150): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    if (import.meta.env.DEV) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
   }
 
   /**
@@ -391,14 +393,16 @@ class MessageService {
       this.messages.push(message);
       this.saveMessages();
 
-      // 模拟消息送达
-      setTimeout(() => {
-        const msg = this.messages.find(m => m.id === message.id);
-        if (msg) {
-          msg.status = 'delivered';
-          this.saveMessages();
-        }
-      }, 500);
+      // P0-1: Gate mock delivery simulation behind DEV mode
+      if (import.meta.env.DEV) {
+        setTimeout(() => {
+          const msg = this.messages.find(m => m.id === message.id);
+          if (msg) {
+            msg.status = 'delivered';
+            this.saveMessages();
+          }
+        }, 500);
+      }
 
       return this.successResponse(message);
     } catch (error) {

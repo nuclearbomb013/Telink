@@ -46,6 +46,7 @@ const ForumPostPage = () => {
   // 回复状态
   const [replyContent, setReplyContent] = useState('');
   const [replyingTo, setReplyingTo] = useState<{ id: number; name: string } | null>(null);
+  const [replyError, setReplyError] = useState<string | null>(null);
   const replyInputRef = useRef<HTMLTextAreaElement>(null);
 
   /**
@@ -180,19 +181,21 @@ const ForumPostPage = () => {
     if (!post || !currentUser || !replyContent.trim()) return;
 
     setSubmitting(true);
+    setReplyError(null);
 
-    const response = await commentService.createComment({
-      postId: post.id,
-      content: replyContent.trim(),
-      authorId: currentUser.id,
-      authorName: currentUser.username,
-      authorAvatar: currentUser.avatar,
-      parentId: replyingTo?.id,
-      replyToId: replyingTo?.id,
-      replyToName: replyingTo?.name,
-    });
+    try {
+      const response = await commentService.createComment({
+        postId: post.id,
+        content: replyContent.trim(),
+        authorId: currentUser.id,
+        authorName: currentUser.username,
+        authorAvatar: currentUser.avatar,
+        parentId: replyingTo?.id,
+        replyToId: replyingTo?.id,
+        replyToName: replyingTo?.name,
+      });
 
-    if (response.success && response.data) {
+      if (response.success && response.data) {
       // P9-112: Add new comment to correct location in thread
       // If it's a reply, add to parent's replies array; otherwise add to root
       if (response.data.parentId) {
@@ -217,10 +220,13 @@ const ForumPostPage = () => {
       setReplyContent('');
       setReplyingTo(null);
     } else {
-      alert('发布失败：' + response.error?.message);
+      setReplyError(response.error?.message || '发布失败，请稍后重试');
     }
-
-    setSubmitting(false);
+    } catch (err) {
+      setReplyError(err instanceof Error ? err.message : '网络错误，请检查连接后重试');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   /**
@@ -497,6 +503,11 @@ const ForumPostPage = () => {
                   className="min-h-[120px] mb-4"
                 />
 
+                {replyError && (
+                  <div className="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-sm px-3 py-2" role="alert">
+                    {replyError}
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   <div className="font-roboto text-xs text-brand-dark-gray/60">
                     支持 Markdown 语法

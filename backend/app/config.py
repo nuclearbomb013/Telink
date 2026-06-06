@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "TechInk API"
     APP_VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
-    DEBUG: bool = True
+    DEBUG: bool = False  # Must be explicitly enabled
 
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/techink"
@@ -88,14 +88,37 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins_list(self) -> List[str]:
-        """Parse CORS_ORIGINS string to list."""
+        """Parse CORS_ORIGINS string to list.
+
+        Security (P1-5): In production, wildcard CORS with allow_credentials=True
+        is a security risk. Fail fast if production uses ["*"] or unparseable JSON.
+        """
         import json
         try:
             origins = json.loads(self.CORS_ORIGINS)
-            # 如果是 ["*"]，返回 ["*"] 让所有来源都允许
-            return origins
-        except Exception:
-            return ["*"]  # 默认允许所有来源
+        except json.JSONDecodeError as e:
+            if self.ENVIRONMENT == "production":
+                raise ValueError(
+                    f"CORS_ORIGINS must be valid JSON in production. "
+                    f"Parse error: {e}. "
+                    f"Set CORS_ORIGINS='[\"https://yourdomain.com\"]' in your .env file."
+                )
+            return ["*"]
+
+        # P1-5: Production must have explicit origin whitelist
+        if self.ENVIRONMENT == "production":
+            if origins == ["*"] or "*" in origins:
+                raise ValueError(
+                    "CORS_ORIGINS must be an explicit origin list in production, not ['*']. "
+                    "Set CORS_ORIGINS='[\"https://yourdomain.com\"]' in your .env file."
+                )
+            if not origins:
+                raise ValueError(
+                    "CORS_ORIGINS must not be empty in production. "
+                    "Set CORS_ORIGINS to an explicit list of allowed origins."
+                )
+
+        return origins
 
     @property
     def cors_methods_list(self) -> List[str]:

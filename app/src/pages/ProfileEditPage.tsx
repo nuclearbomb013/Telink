@@ -59,6 +59,8 @@ const ProfileEditPage: React.FC = () => {
   });
 
   const [errors, setErrors] = useState<FormErrors>({});
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [usernameCheck, setUsernameCheck] = useState<UsernameCheck>({
     checking: false,
     available: null,
@@ -169,16 +171,17 @@ const ProfileEditPage: React.FC = () => {
 
       // 验证文件类型
       if (!file.type.startsWith('image/')) {
-        alert('请选择图片文件');
+        setAvatarError('请选择图片文件');
         return;
       }
 
       // 验证文件大小 (最大 5MB)
       if (file.size > 5 * 1024 * 1024) {
-        alert('图片大小不能超过 5MB');
+        setAvatarError('图片大小不能超过 5MB');
         return;
       }
 
+      setAvatarError(null);
       setIsUploading(true);
 
       try {
@@ -186,11 +189,11 @@ const ProfileEditPage: React.FC = () => {
         if (response.success && response.data) {
           setFormData((prev) => ({ ...prev, avatarUrl: response.data!.url }));
         } else {
-          alert('上传失败，请稍后重试');
+          setAvatarError(response.error?.message || '上传失败，请稍后重试');
         }
       } catch (error) {
-        console.error('Upload error:', error);
-        alert('上传失败，请稍后重试');
+        console.warn('Avatar upload error:', error);
+        setAvatarError('上传失败，请稍后重试');
       } finally {
         setIsUploading(false);
       }
@@ -201,6 +204,7 @@ const ProfileEditPage: React.FC = () => {
   // 处理像素头像确认
   const handlePixelAvatarConfirm = useCallback(
     async (file: File) => {
+      setAvatarError(null);
       setIsUploading(true);
 
       try {
@@ -208,11 +212,11 @@ const ProfileEditPage: React.FC = () => {
         if (response.success && response.data) {
           setFormData((prev) => ({ ...prev, avatarUrl: response.data!.url }));
         } else {
-          alert('上传失败，请稍后重试');
+          setAvatarError(response.error?.message || '上传失败，请稍后重试');
         }
       } catch (error) {
-        console.error('Upload error:', error);
-        alert('上传失败，请稍后重试');
+        console.warn('Pixel avatar upload error:', error);
+        setAvatarError('上传失败，请稍后重试');
       } finally {
         setIsUploading(false);
       }
@@ -278,11 +282,11 @@ const ProfileEditPage: React.FC = () => {
         // 跳转到个人主页
         navigate(`/user/${currentUser.id}`);
       } else {
-        alert(response.error?.message || '保存失败，请稍后重试');
+        setSaveError(response.error?.message || '保存失败，请稍后重试');
       }
     } catch (error) {
-      console.error('Save error:', error);
-      alert('保存失败，请稍后重试');
+      console.warn('Save error:', error);
+      setSaveError('保存失败，请稍后重试');
     } finally {
       setIsSaving(false);
     }
@@ -370,6 +374,9 @@ const ProfileEditPage: React.FC = () => {
                 className="hidden"
               />
 
+              {avatarError && (
+                <p className="font-roboto text-xs text-red-500 mb-3" role="alert">{avatarError}</p>
+              )}
               <p className="font-roboto text-xs text-brand-dark-gray/50 mb-3">
                 点击头像更换图片
               </p>
@@ -455,6 +462,11 @@ const ProfileEditPage: React.FC = () => {
             </div>
 
             {/* 操作按钮 */}
+            {saveError && (
+              <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-sm px-3 py-2" role="alert">
+                {saveError}
+              </div>
+            )}
             <div className="flex justify-end gap-3 pt-4">
               <Button variant="outline" onClick={handleCancel}>
                 取消

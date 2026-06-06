@@ -179,8 +179,13 @@ class NewsService {
     limit: number = 20
   ): Promise<NewsServiceResponse<NewsTimelineResponse>> {
     try {
-      // 模拟网络延迟
-      await new Promise(resolve => setTimeout(resolve, 300));
+      if (import.meta.env.DEV) {
+        console.warn('[NewsService] Using mock data. Connect to real news API for production.');
+      }
+      // P0-1: Remove artificial delay in production
+      if (import.meta.env.DEV) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
 
       // 应用过滤条件
       let filteredItems = [...MOCK_NEWS_DATA];
@@ -242,8 +247,9 @@ class NewsService {
    */
   async getHotNews(limit: number = 5): Promise<NewsServiceResponse<NewsItem[]>> {
     try {
-      // 模拟网络延迟
-      await new Promise(resolve => setTimeout(resolve, 200));
+      if (import.meta.env.DEV) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
 
       const hotNews = [...MOCK_NEWS_DATA]
         .filter(item => item.isHot)
@@ -261,8 +267,9 @@ class NewsService {
    */
   async getNewsById(id: string): Promise<NewsServiceResponse<NewsItem>> {
     try {
-      // 模拟网络延迟
-      await new Promise(resolve => setTimeout(resolve, 150));
+      if (import.meta.env.DEV) {
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
 
       const news = MOCK_NEWS_DATA.find(item => item.id === id);
       if (!news) {

@@ -283,7 +283,7 @@ const CreateMomentModal = ({
                     src={img.localPreview}
                     alt="预览"
                     className={cn(
-                      "w-full h-full object-cover grayscale contrast-125",
+                      "w-full h-full object-cover",
                       img.uploadStatus === 'error' && "opacity-50"
                     )}
                   />

@@ -51,8 +51,13 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
    * Log errors to console and/or error tracking service
    */
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    console.error('Error caught by boundary:', error);
-    console.error('Component stack:', errorInfo.componentStack);
+    // P2-1: Only log detailed stack in development to avoid leaking info
+    if (import.meta.env.DEV) {
+      console.error('Error caught by boundary:', error);
+      console.error('Component stack:', errorInfo.componentStack);
+    } else {
+      console.error('Error caught by boundary:', error.message);
+    }
 
     // TODO: Send error to tracking service (e.g., Sentry)
     // if (typeof Sentry !== 'undefined') {
@@ -147,14 +152,13 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                 刷新页面
               </button>
 
-              {import.meta.env.DEV && (
-                <button
-                  onClick={this.handleReset}
-                  className="inline-flex items-center justify-center px-6 py-2.5 border border-brand-text text-brand-text font-roboto text-sm uppercase tracking-wider hover:bg-brand-text/5 transition-colors cursor-hover"
-                >
-                  重试
-                </button>
-              )}
+              {/* P2-1: Always show retry button (not just DEV mode) */}
+              <button
+                onClick={this.handleReset}
+                className="inline-flex items-center justify-center px-6 py-2.5 border border-brand-text text-brand-text font-roboto text-sm uppercase tracking-wider hover:bg-brand-text/5 transition-colors cursor-hover"
+              >
+                重试
+              </button>
             </div>
           </div>
         </div>
@@ -168,6 +172,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 /**
  * Functional wrapper for using ErrorBoundary with hooks
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export const withErrorBoundary = <P extends object>(
   Component: React.ComponentType<P>,
   fallback?: ReactNode

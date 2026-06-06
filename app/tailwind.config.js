@@ -15,7 +15,7 @@ module.exports = {
         'brand-linen': '#ffffff',
         'brand-pure-black': '#000000',
         'brand-text': '#000000',
-        'brand-light-gray': '#999999',
+        'brand-light-gray': '#767676',  // WCAG AA 4.5:1 on white (was #999 / 2.86:1)
         'brand-dark-gray': '#333333',
         'brand-border': '#000000',
         
@@ -23,7 +23,7 @@ module.exports = {
         'ink-black': '#000000',
         'ink-dark': '#333333',
         'ink-medium': '#666666',
-        'ink-light': '#999999',
+        'ink-light': '#767676',  // WCAG AA 4.5:1 on white (was #999)
         'ink-pale': '#cccccc',
         'ink-white': '#ffffff',
         'ink-paper': '#fafafa',

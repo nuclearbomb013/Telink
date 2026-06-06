@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "browser-feedback": {
+      "command": "node",
+      "args": ["./.claude/skills/browser-feedback/mcp-server/index.js"]
+    },
+    "postgres-explorer": {
+      "command": "E:/KIMI_web/.venv/Scripts/python.exe",
+      "args": ["./.claude/skills/postgres-explorer/mcp-server/server.py"]
+    }
+  }
+}

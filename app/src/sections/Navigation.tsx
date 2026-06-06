@@ -168,12 +168,12 @@ const Navigation = () => {
   const handleSearchSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
-      // TODO: Implement search functionality
-      // For now, just close the search and clear the query
+      // 导航到论坛搜索页并传递搜索词
+      navigate(`/forum?search=${encodeURIComponent(searchQuery.trim())}`);
       setIsSearchOpen(false);
       setSearchQuery('');
     }
-  }, [searchQuery]);
+  }, [searchQuery, navigate]);
 
   // Move conditional render to return statement
   if (!shouldRender) {
