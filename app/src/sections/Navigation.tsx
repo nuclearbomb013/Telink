@@ -5,7 +5,7 @@ import { Search, X, User, MessageCircle } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { navigationConfig } from '@/config';
 import { useReduceMotion } from '@/hooks/useReduceMotion';
-import { useAuthContext } from '@/context/AuthContext'; // Import context hook directly
+import { useAuth } from '@/hooks/useAuth';
 import NotificationBell from '@/components/Notification/NotificationBell';
 import UserAvatar from '@/components/Forum/UserAvatar';
 
@@ -30,7 +30,7 @@ const Navigation = () => {
   const prefersReducedMotion = useReduceMotion();
   const location = useLocation();
   const navigate = useNavigate();
-  const { currentUser: user, isAuthenticated, logout } = useAuthContext(); // Use context directly
+  const { user, isAuthenticated, logout } = useAuth();
   const isHomePage = location.pathname === '/';
 
   // Check if we should render

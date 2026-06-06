@@ -44,6 +44,8 @@ interface UseAuthReturn {
   clearError: () => void;
   /** 重新加载用户 */
   reloadUser: () => void;
+  /** 更新当前用户 */
+  updateCurrentUser: (updates: Partial<CurrentUser>) => void;
 }
 
 /**
@@ -64,7 +66,7 @@ interface UseAuthReturn {
  */
 export function useAuth(): UseAuthReturn {
   // 从 AuthContext 获取状态，确保全局一致
-  const { currentUser, isAuthenticated, login: contextLogin, logout: contextLogout, refreshAuthStatus, error, clearError: contextClearError } = useAuthContext();
+  const { currentUser, isAuthenticated, loading, login: contextLogin, logout: contextLogout, refreshAuthStatus, updateCurrentUser: contextUpdateUser, error, clearError: contextClearError } = useAuthContext();
 
   /**
    * 登录 - 使用 AuthContext 的登录方法
@@ -167,7 +169,7 @@ export function useAuth(): UseAuthReturn {
     // 状态
     user: currentUser,
     isAuthenticated,
-    isLoading: false, // AuthContext handles loading internally, consumers check ProtectedRoute
+    isLoading: loading,
     error, // 从 AuthContext 透传错误状态
 
     // 方法
@@ -178,6 +180,7 @@ export function useAuth(): UseAuthReturn {
     resetPassword,
     clearError,
     reloadUser,
+    updateCurrentUser: contextUpdateUser,
   };
 }
 

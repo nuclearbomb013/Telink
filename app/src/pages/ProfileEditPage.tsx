@@ -10,7 +10,7 @@ import { ArrowLeft, Save, Loader2, Check, X, Camera, Palette } from 'lucide-reac
 
 import { cn } from '@/lib/utils';
 import { userApi, uploadApi, type UserPublic } from '@/lib/apiClient';
-import { useAuthContext } from '@/context/AuthContext';
+import { useAuth } from '@/hooks/useAuth';
 
 import UserAvatar from '@/components/Forum/UserAvatar';
 import PixelAvatarConverter from '@/components/PixelAvatar/PixelAvatarConverter';
@@ -39,7 +39,7 @@ interface UsernameCheck {
 
 const ProfileEditPage: React.FC = () => {
   const navigate = useNavigate();
-  const { currentUser, updateCurrentUser } = useAuthContext();
+  const { user: currentUser, updateCurrentUser } = useAuth();
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);

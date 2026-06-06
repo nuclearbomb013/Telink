@@ -7,7 +7,6 @@
 import { useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
-import { useAuthContext } from '@/context/AuthContext';
 
 export interface ProtectedRouteProps {
   /** 子组件 */
@@ -29,9 +28,7 @@ export interface ProtectedRouteProps {
 const ProtectedRoute = ({ children, redirectTo = '/login' }: ProtectedRouteProps) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isAuthenticated } = useAuth();
-  // P1-10: Get loading state directly from AuthContext
-  const { loading: isLoading } = useAuthContext();
+  const { isAuthenticated, isLoading } = useAuth();
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
