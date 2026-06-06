@@ -35,10 +35,8 @@ test.describe('Forum', () => {
     }
   });
 
-  test('forum create page requires authentication', async ({ page }) => {
-    // Clear auth
-    await page.context().clearCookies();
-    await page.evaluate(() => localStorage.clear());
+  test('forum create page requires authentication', async ({ page, context }) => {
+    await context.clearCookies();
 
     await page.goto('/forum/create');
     await expect(page).toHaveURL(/\/login/);

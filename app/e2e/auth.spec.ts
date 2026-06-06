@@ -36,14 +36,13 @@ test.describe('Authentication', () => {
     await expect(page.locator('nav')).toBeVisible();
   });
 
-  test('protected route /forum/create redirects to login when not authenticated', async ({ page }) => {
-    // Clear any existing auth state
-    await page.context().clearCookies();
-    await page.evaluate(() => localStorage.clear());
+  test('protected route /forum/create redirects to login when not authenticated', async ({ page, context }) => {
+    await context.clearCookies();
+    // Use context.addInitScript or clear storage via browser context instead of page.evaluate
+    await context.clearCookies();
 
     await page.goto('/forum/create');
 
-    // Should redirect to login page
     await expect(page).toHaveURL(/\/login/);
   });
 
