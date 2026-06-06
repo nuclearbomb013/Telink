@@ -5,7 +5,12 @@
  * 所有值都从 ARTSTYLE.md 设计指南中提取。
  *
  * @see ARTSTYLE.md - 完整设计系统文档
+ *
+ * Note: Animation parameters (EASING, DURATION, STAGGER) are sourced from
+ * @/constants/animation.constants.ts — the single source of truth.
  */
+
+import { EASING, DURATION, STAGGER } from '@/constants/animation.constants';
 
 // ============================================================
 // 颜色系统
@@ -287,53 +292,9 @@ export const SHADOW = {
 // ============================================================
 // 动画系统
 // ============================================================
-
-/**
- * 缓动函数
- */
-export const EASING = {
-  expoOut: 'cubic-bezier(0.16, 1, 0.3, 1)',
-  smooth: 'cubic-bezier(0.65, 0, 0.35, 1)',
-  dramatic: 'cubic-bezier(0.85, 0, 0.15, 1)',
-  power2Out: 'power2.out',
-  power3Out: 'power3.out',
-  power4Out: 'power4.out',
-  elastic: 'elastic.out(1, 0.5)',
-  easeOut: 'ease-out',
-  easeInOut: 'ease-in-out',
-} as const;
-
-/**
- * 动画持续时间 (秒)
- */
-export const DURATION = {
-  fast: 0.2,
-  normal: 0.4,
-  medium: 0.6,
-  slow: 0.8,
-  verySlow: 1.2,
-} as const;
-
-/**
- * 错开延迟 (秒)
- */
-export const STAGGER = {
-  fast: 0.05,
-  normal: 0.1,
-  slow: 0.15,
-} as const;
-
-/**
- * 过渡类名组合
- */
-export const TRANSITION = {
-  fast: 'transition-all duration-200 ease-out',
-  normal: 'transition-all duration-300 ease-expo-out',
-  medium: 'transition-all duration-500 ease-expo-out',
-  slow: 'transition-all duration-700 ease-expo-out',
-  color: 'transition-colors duration-300 ease-out',
-  transform: 'transition-transform duration-500 ease-expo-out',
-} as const;
+// Note: EASING, DURATION, STAGGER are defined in @/constants/animation.constants.ts
+// which is the single source of truth for animation parameters.
+// See also: TRANSITION presets below for Tailwind utility classes.
 
 // ============================================================
 // 断点系统
