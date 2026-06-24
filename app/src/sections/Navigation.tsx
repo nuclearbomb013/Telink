@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { gsap } from 'gsap';
-import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import { Search, X, User, MessageCircle } from 'lucide-react';
+import { gsap, ScrollTrigger } from '@/lib/gsap';
+import { Search, X, User, MessageCircle, Heart, Clock } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { navigationConfig } from '@/config';
+import { navigationConfig } from '@/config/navigation.config';
 import { useReduceMotion } from '@/hooks/useReduceMotion';
+import { EASING, DURATION, STAGGER } from '@/constants/animation.constants';
 import { useAuth } from '@/hooks/useAuth';
 import NotificationBell from '@/components/Notification/NotificationBell';
 import UserAvatar from '@/components/Forum/UserAvatar';
@@ -39,35 +39,35 @@ const Navigation = () => {
   useEffect(() => {
     if (!shouldRender || prefersReducedMotion) return;
 
-    // Initial animation
-    const tl = gsap.timeline();
+    const ctx = gsap.context(() => {
+      const tl = gsap.timeline();
 
-    tl.fromTo(
-      logoRef.current,
-      { scale: 0.8, rotation: -5, opacity: 0 },
-      { scale: 1, rotation: 0, opacity: 1, duration: 1.2, ease: 'elastic.out(1, 0.5)' }
-    );
-
-    if (linksRef.current) {
-      const links = linksRef.current.querySelectorAll('a');
       tl.fromTo(
-        links,
-        { y: 50, opacity: 0 },
-        { y: 0, opacity: 1, duration: 0.8, stagger: 0.1, ease: 'power3.out' },
-        '-=0.8'
+        logoRef.current,
+        { scale: 0.8, rotation: -5, opacity: 0 },
+        { scale: 1, rotation: 0, opacity: 1, duration: DURATION.verySlow, ease: EASING.elasticOut }
       );
-    }
 
-    // Scroll trigger for compact mode - use position to check scroll position
-    const trigger = ScrollTrigger.create({
-      start: '100px top',
-      onUpdate: (self) => {
-        setIsScrolled(self.scroll() > 100);
-      },
+      if (linksRef.current) {
+        const links = linksRef.current.querySelectorAll('a');
+        tl.fromTo(
+          links,
+          { y: 50, opacity: 0 },
+          { y: 0, opacity: 1, duration: DURATION.slow, stagger: STAGGER.normal, ease: EASING.power3Out },
+          '-=0.8'
+        );
+      }
+
+      ScrollTrigger.create({
+        start: '100px top',
+        onUpdate: (self) => {
+          setIsScrolled(self.scroll() > 100);
+        },
+      });
     });
 
     return () => {
-      trigger.kill();
+      ctx.revert();
     };
   }, [prefersReducedMotion, shouldRender]);
 
@@ -77,7 +77,7 @@ const Navigation = () => {
       gsap.fromTo(
         searchOverlayRef.current,
         { clipPath: 'circle(0% at calc(100% - 40px) 40px)' },
-        { clipPath: 'circle(150% at calc(100% - 40px) 40px)', duration: 0.8, ease: 'power3.out' }
+        { clipPath: 'circle(150% at calc(100% - 40px) 40px)', duration: DURATION.slow, ease: EASING.power3Out }
       );
       // Focus input after animation
       setTimeout(() => searchInputRef.current?.focus(), 100);
@@ -186,9 +186,10 @@ const Navigation = () => {
         ref={navRef}
         className={`fixed top-0 left-0 right-0 z-50 transition-all duration-700 ease-expo-out ${
           isScrolled
-            ? 'py-3 glass border-b border-brand-border/30'
+            ? 'py-3 border-b backdrop-blur-sm'
             : 'py-6'
         }`}
+        style={{ background: isScrolled ? 'rgba(242,240,232,0.92)' : 'transparent', borderColor: isScrolled ? '#CFCEC4' : 'transparent' }}
         role="navigation"
         aria-label="主导航"
       >
@@ -296,9 +297,10 @@ const Navigation = () => {
                     />
 
                     {/* 下拉面板 */}
-                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-xl border border-brand-border/30 z-50 overflow-hidden">
+                    <div className="absolute right-0 mt-2 w-48 rounded-xl shadow-[0_4px_18px_rgb(36_39_34_/_0.08)] border z-50 overflow-hidden"
+                      style={{ background: '#F2F0E8', borderColor: '#CFCEC4' }}>
                       {/* 用户信息 */}
-                      <div className="px-4 py-3 border-b border-brand-border/30">
+                      <div className="px-4 py-3 border-b" style={{ borderColor: '#CFCEC4' }}>
                         <div className="flex items-center gap-3">
                           <UserAvatar
                             username={user.username}
@@ -345,6 +347,22 @@ const Navigation = () => {
                           消息
                         </Link>
                         <Link
+                          to="/favorites"
+                          className="flex items-center gap-2 px-4 py-2 font-roboto text-sm text-brand-dark-gray hover:bg-brand-linen hover:text-brand-text transition-colors"
+                          onClick={() => setIsUserMenuOpen(false)}
+                        >
+                          <Heart size={14} />
+                          收藏
+                        </Link>
+                        <Link
+                          to="/history"
+                          className="flex items-center gap-2 px-4 py-2 font-roboto text-sm text-brand-dark-gray hover:bg-brand-linen hover:text-brand-text transition-colors"
+                          onClick={() => setIsUserMenuOpen(false)}
+                        >
+                          <Clock size={14} />
+                          历史记录
+                        </Link>
+                        <Link
                           to="/forum"
                           className="block px-4 py-2 font-roboto text-sm text-brand-dark-gray hover:bg-brand-linen hover:text-brand-text transition-colors"
                           onClick={() => setIsUserMenuOpen(false)}
@@ -361,7 +379,7 @@ const Navigation = () => {
                       </div>
 
                       {/* 登出按钮 */}
-                      <div className="py-2 border-t border-brand-border/30">
+                      <div className="py-2 border-t" style={{ borderColor: '#CFCEC4' }}>
                         <button
                           onClick={() => {
                             logout();

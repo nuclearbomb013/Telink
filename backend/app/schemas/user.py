@@ -2,7 +2,7 @@
 User Schemas
 """
 
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 from urllib.parse import urlparse
 
@@ -132,3 +132,13 @@ class UserStats(BaseModel):
     like_count: int = 0
     following_count: int = 0
     follower_count: int = 0
+
+
+class UserListResult(BaseModel):
+    """Paginated user list result."""
+
+    users: List[UserPublic]
+    total: int
+    page: int
+    limit: int
+    total_pages: int

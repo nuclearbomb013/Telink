@@ -5,6 +5,7 @@
  */
 
 import { cn } from '@/lib/utils';
+import OptimizedImage from '@/components/OptimizedImage';
 
 export interface UserAvatarProps {
   /** 用户头像 URL */
@@ -66,6 +67,13 @@ const sizeMap = {
   xl: 'w-14 h-14 text-lg',
 };
 
+const sizeDimensions = {
+  sm: 24,
+  md: 32,
+  lg: 40,
+  xl: 56,
+} as const;
+
 /**
  * UserAvatar 组件
  */
@@ -108,9 +116,11 @@ const UserAvatar = ({
       onKeyDown={handleKeyDown}
     >
       {avatarUrl ? (
-        <img
+        <OptimizedImage
           src={avatarUrl}
           alt={username}
+          width={sizeDimensions[size]}
+          height={sizeDimensions[size]}
           className="w-full h-full object-cover"
           loading="lazy"
         />

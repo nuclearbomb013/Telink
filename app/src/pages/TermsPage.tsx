@@ -1,21 +1,94 @@
 import { Link } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
+import MarkdownRenderer from '@/components/MarkdownRenderer';
+
+const TERMS_CONTENT = `# 用户条款
+
+最后更新日期：2026年3月1日
+
+欢迎使用 TechInk（以下简称"本平台"）。本平台是一个以代码为核心的知识分享与交流社区。请在使用本平台服务之前，仔细阅读以下条款。
+
+## 一、服务说明
+
+本平台为用户提供以下服务：
+
+- 技术文章发布与阅读
+- 论坛讨论与问答
+- 资讯浏览
+- 用户个人主页与收藏管理
+
+本平台保留随时修改、暂停或终止部分或全部服务的权利。
+
+## 二、用户注册与账户
+
+1. 用户在注册时应提供真实、准确、完整的注册信息。
+2. 用户名的选择应遵守公序良俗，不得含有违法、侵权或误导性内容。
+3. 用户应妥善保管账户密码，因账户泄露导致的损失由用户自行承担。
+4. 每个用户仅可注册一个账户，禁止买卖、转让账户。
+
+## 三、用户行为规范
+
+用户在使用本平台时应遵守以下规范：
+
+### 允许的行为
+
+- 发布原创或已获授权的技术内容
+- 参与论坛讨论，分享知识与经验
+- 尊重他人观点，理性交流
+
+### 禁止的行为
+
+- 发布违法、淫秽、暴力、歧视性内容
+- 发布垃圾信息、广告或恶意链接
+- 侵犯他人知识产权，包括抄袭、搬运他人作品
+- 进行人身攻击、骚扰或其他侵害他人权益的行为
+- 利用技术手段破坏平台正常运行
+
+> 违反上述规范的内容将被删除，严重违规者将被封禁账户。
+
+## 四、知识产权
+
+1. 用户在本平台发布的原创内容，其知识产权归原作者所有。
+2. 用户发布内容即视为授予本平台在平台内展示、传播该内容的非独家许可。
+3. 转载内容应注明出处并获得原作者授权，因侵权产生的纠纷由发布者承担全部责任。
+4. 本平台的界面设计、logo、文案等版权归本平台所有。
+
+## 五、内容审核
+
+本平台有权对用户发布的内容进行审核，包括但不限于：
+
+- 人工审核与自动化审核相结合
+- 对违规内容进行删除、隐藏处理
+- 对违规用户进行警告、限制功能或封禁处理
+
+## 六、免责声明
+
+1. 本平台不对用户内容的准确性、完整性做出担保。
+2. 用户因参考平台内容而造成的任何损失，本平台不承担责任。
+3. 因不可抗力导致的服务中断，本平台不承担责任。
+4. 本平台不对第三方链接的内容负责。
+
+## 七、条款修改
+
+本平台保留随时修改本条款的权利。条款更新后，用户继续使用本平台即视为同意修改后的条款。
+
+## 八、联系方式
+
+如有任何问题，请通过平台内的反馈功能与我们联系。
+`;
 
 const TermsPage = () => {
   return (
     <div className="min-h-[80vh] bg-brand-linen py-16 px-4">
-      <div className="max-w-3xl mx-auto">
+      <div className="max-w-[720px] mx-auto">
         <Link
           to="/register"
-          className="font-roboto text-sm text-brand-dark-gray/70 hover:text-brand-text transition-colors mb-8 inline-block"
+          className="font-roboto text-sm text-brand-dark-gray/70 hover:text-brand-text transition-colors mb-8 inline-flex items-center gap-1.5"
         >
-          &larr; 返回注册
+          <ArrowLeft size={14} />
+          返回注册
         </Link>
-        <h1 className="font-oswald text-3xl text-brand-text mb-8">用户条款</h1>
-        <div className="prose prose-brand max-w-none font-roboto space-y-6">
-          <p className="text-brand-dark-gray/70">
-            用户条款页面内容即将上线。请关注我们的更新。
-          </p>
-        </div>
+        <MarkdownRenderer content={TERMS_CONTENT} mode="preview" />
       </div>
     </div>
   );

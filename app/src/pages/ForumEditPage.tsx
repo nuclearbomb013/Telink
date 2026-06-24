@@ -9,8 +9,9 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Eye, EyeOff, Tags, Image as ImageIcon, Link as LinkIcon } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
+import OptimizedImage from '@/components/OptimizedImage';
 import { forumService } from '@/services/forum.service';
-import { userService } from '@/services/user.service';
+import { useAuth } from '@/hooks/useAuth';
 import type { ForumCategory, ForumPost, UpdateForumPostData } from '@/services/forum.types';
 
 import { Button } from '@/components/ui/button';
@@ -36,9 +37,7 @@ const categories: Array<{ value: ForumCategory; label: string; icon: string; des
 const ForumEditPage = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-
-  // 用户状态
-  const [currentUser, setCurrentUser] = useState<{ id: number; username: string; avatar?: string } | null>(null);
+  const { user: currentUser, isAuthenticated } = useAuth();
 
   // 帖子数据
   const [post, setPost] = useState<ForumPost | null>(null);
@@ -112,18 +111,14 @@ const ForumEditPage = () => {
    * 检查登录状态并加载帖子数据
    */
   useEffect(() => {
-    const user = userService.getCurrentUser();
-    if (!user) {
-      // 未登录，重定向到登录页
+    if (!isAuthenticated || !currentUser) {
       navigate('/login', { state: { from: { pathname: `/forum/edit/${id}` } } });
       return;
     }
-    setCurrentUser(user);
 
-    // 加载帖子数据（传入 user.id 避免闭包问题）
-    loadPost(parseInt(id || '0', 10), user.id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadPost intentionally excluded; receives user.id as argument to avoid stale closure
-  }, [id, navigate]);
+    loadPost(parseInt(id || '0', 10), currentUser.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, navigate, isAuthenticated]);
 
   /**
    * 验证表单
@@ -472,16 +467,13 @@ const ForumEditPage = () => {
                   </div>
                   {imageUrl && (
                     <div className="rounded-lg overflow-hidden border border-brand-border/30">
-                      <img
+                      <OptimizedImage
                         src={imageUrl}
                         alt="封面预览"
+                        width={640}
+                        height={224}
                         className="w-full h-56 object-cover"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                        }}
-                        onLoad={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'block';
-                        }}
+                        loading="eager"
                       />
                     </div>
                   )}

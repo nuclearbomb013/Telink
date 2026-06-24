@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { gsap } from 'gsap';
+import { gsap } from '@/lib/gsap';
+import { useReduceMotion } from '@/hooks/useReduceMotion';
+import { EASING, DURATION, STAGGER } from '@/constants/animation.constants';
 import { ArrowRight } from 'lucide-react';
 
-import { lifestyleConfig } from '@/config';
+import { lifestyleConfig } from '@/config/community.config';
 
 /**
  * Lifestyle Section Component
@@ -16,14 +18,13 @@ const LifestyleSection = () => {
   const cardsContainerRef = useRef<HTMLDivElement>(null);
   const [hoveredCard, setHoveredCard] = useState<number | null>(null);
   const [activeCard, setActiveCard] = useState<number | null>(null);
+  const prefersReducedMotion = useReduceMotion();
 
   // Check if we should render
   const shouldRender = Boolean(lifestyleConfig.sectionTitle || lifestyleConfig.articles.length > 0);
 
   useEffect(() => {
     if (!shouldRender) return;
-
-    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     if (prefersReducedMotion) {
       return;
@@ -37,8 +38,8 @@ const LifestyleSection = () => {
         {
           y: 0,
           opacity: 1,
-          duration: 0.8,
-          ease: 'power3.out',
+          duration: DURATION.slow,
+          ease: EASING.power3Out,
           scrollTrigger: {
             trigger: titleRef.current,
             start: 'top 85%',
@@ -66,13 +67,13 @@ const LifestyleSection = () => {
               rotateZ: lifestyleConfig.articles[index]?.rotation || 0,
               opacity: 1,
               x: 0,
-              duration: 1.2,
-              ease: 'power3.out',
+              duration: DURATION.verySlow,
+              ease: EASING.power3Out,
               scrollTrigger: {
                 trigger: cardsContainerRef.current,
                 start: 'top 80%',
               },
-              delay: index * 0.15,
+              delay: index * STAGGER.slow,
             }
           );
         });
@@ -80,33 +81,33 @@ const LifestyleSection = () => {
     }, sectionRef);
 
     return () => ctx.revert();
-  }, [shouldRender]);
+  }, [shouldRender, prefersReducedMotion]);
 
   const handleCardClick = (id: number) => {
     setActiveCard(activeCard === id ? null : id);
   };
 
   const handleCardHover = useCallback((card: HTMLElement, isEntering: boolean, article: typeof lifestyleConfig.articles[0]) => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (prefersReducedMotion) return;
 
     if (isEntering) {
       gsap.to(card, {
         rotateZ: 0,
         scale: 1.05,
         zIndex: 100,
-        duration: 0.4,
-        ease: 'power2.out',
+        duration: DURATION.normal,
+        ease: EASING.power2Out,
       });
     } else {
       gsap.to(card, {
         rotateZ: article.rotation,
         scale: 1,
         zIndex: 1,
-        duration: 0.4,
-        ease: 'power2.out',
+        duration: DURATION.normal,
+        ease: EASING.power2Out,
       });
     }
-  }, []);
+  }, [prefersReducedMotion]);
 
   // Move conditional render to return statement
   if (!shouldRender) {

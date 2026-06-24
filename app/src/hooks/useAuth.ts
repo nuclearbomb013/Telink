@@ -92,11 +92,7 @@ export function useAuth(): UseAuthReturn {
       try {
         const response = await authService.register(credentials);
         if (response.success && response.data) {
-          // 注册成功后自动登录
-          await contextLogin({
-            username: credentials.username,
-            password: credentials.password,
-          });
+          refreshAuthStatus();
           return { success: true, message: '注册成功' };
         } else {
           const errorMessage = response.error?.message || '注册失败';
@@ -107,7 +103,7 @@ export function useAuth(): UseAuthReturn {
         return { success: false, message: errorMessage };
       }
     },
-    [contextLogin]
+    [refreshAuthStatus]
   );
 
   /**

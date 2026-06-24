@@ -14,19 +14,18 @@ Uses the real test database via the FastAPI TestClient pattern.
 
 import pytest
 from httpx import AsyncClient, ASGITransport
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy import select
 
-from app.main import create_app
 from app.models.user import User, UserRole
 from app.models.moment import Moment, MomentLike, MomentComment
 from app.core.security import TokenManager, PasswordManager
-from app.db.session import async_session_maker
 
 
-async def _create_test_user() -> User:
+async def _create_test_user(session_maker: async_sessionmaker[AsyncSession]) -> User:
     """Create a test user with a valid password hash."""
     import uuid
-    async with async_session_maker() as s:
+    async with session_maker() as s:
         user = User(
             username=f"tm_{uuid.uuid4().hex[:6]}",
             email=f"tm_{uuid.uuid4().hex[:6]}@t.com",
@@ -45,8 +44,8 @@ def _token(user: User) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
-async def _cleanup_user(user_id: int):
-    async with async_session_maker() as s:
+async def _cleanup_user(session_maker: async_sessionmaker[AsyncSession], user_id: int):
+    async with session_maker() as s:
         # Delete moments and related data
         result = await s.execute(select(Moment).where(Moment.author_id == user_id))
         for m in result.scalars():
@@ -69,31 +68,28 @@ class TestMomentsAPI:
     """Moments API integration tests."""
 
     @pytest.mark.asyncio
-    async def test_list_empty(self):
+    async def test_list_empty(self, test_app):
         """Anonymous users get empty public list."""
-        app = create_app()
-        transport = ASGITransport(app=app)
+        transport = ASGITransport(app=test_app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             r = await client.get("/api/v1/moments")
             assert r.status_code == 200
             assert r.json()["data"]["moments"] == []
 
     @pytest.mark.asyncio
-    async def test_create_requires_auth(self):
+    async def test_create_requires_auth(self, test_app):
         """Creating a moment without auth returns 401."""
-        app = create_app()
-        transport = ASGITransport(app=app)
+        transport = ASGITransport(app=test_app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             r = await client.post("/api/v1/moments", json={"content": "x"})
             assert r.status_code == 401
 
     @pytest.mark.asyncio
-    async def test_create_and_read(self):
+    async def test_create_and_read(self, test_app, test_session_maker):
         """Create a moment and verify it appears in the list."""
-        user = await _create_test_user()
+        user = await _create_test_user(test_session_maker)
         try:
-            app = create_app()
-            transport = ASGITransport(app=app)
+            transport = ASGITransport(app=test_app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 r = await client.post(
                     "/api/v1/moments",
@@ -110,16 +106,15 @@ class TestMomentsAPI:
                 contents = [m["content"] for m in r.json()["data"]["moments"]]
                 assert "Hello pytest" in contents
         finally:
-            await _cleanup_user(user.id)
+            await _cleanup_user(test_session_maker, user.id)
 
     @pytest.mark.asyncio
-    async def test_visibility(self):
+    async def test_visibility(self, test_app, test_session_maker):
         """Public visible to all, private only to author."""
-        u1 = await _create_test_user()
-        u2 = await _create_test_user()
+        u1 = await _create_test_user(test_session_maker)
+        u2 = await _create_test_user(test_session_maker)
         try:
-            app = create_app()
-            transport = ASGITransport(app=app)
+            transport = ASGITransport(app=test_app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 # u1 creates public and private
                 await client.post("/api/v1/moments", json={"content": "pub"}, headers=_token(u1))
@@ -142,17 +137,16 @@ class TestMomentsAPI:
                 assert "pub" in contents
                 assert "priv" in contents
         finally:
-            await _cleanup_user(u1.id)
-            await _cleanup_user(u2.id)
+            await _cleanup_user(test_session_maker, u1.id)
+            await _cleanup_user(test_session_maker, u2.id)
 
     @pytest.mark.asyncio
-    async def test_delete_permission(self):
+    async def test_delete_permission(self, test_app, test_session_maker):
         """Only author can delete."""
-        u1 = await _create_test_user()
-        u2 = await _create_test_user()
+        u1 = await _create_test_user(test_session_maker)
+        u2 = await _create_test_user(test_session_maker)
         try:
-            app = create_app()
-            transport = ASGITransport(app=app)
+            transport = ASGITransport(app=test_app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 r = await client.post("/api/v1/moments", json={"content": "to_del"}, headers=_token(u1))
                 mid = r.json()["data"]["id"]
@@ -165,16 +159,15 @@ class TestMomentsAPI:
                 r = await client.delete(f"/api/v1/moments/{mid}", headers=_token(u1))
                 assert r.json()["success"] is True
         finally:
-            await _cleanup_user(u1.id)
-            await _cleanup_user(u2.id)
+            await _cleanup_user(test_session_maker, u1.id)
+            await _cleanup_user(test_session_maker, u2.id)
 
     @pytest.mark.asyncio
-    async def test_like_idempotent(self):
+    async def test_like_idempotent(self, test_app, test_session_maker):
         """Like -> unlike -> like toggle works correctly."""
-        user = await _create_test_user()
+        user = await _create_test_user(test_session_maker)
         try:
-            app = create_app()
-            transport = ASGITransport(app=app)
+            transport = ASGITransport(app=test_app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 r = await client.post("/api/v1/moments", json={"content": "like_test"}, headers=_token(user))
                 mid = r.json()["data"]["id"]
@@ -194,16 +187,15 @@ class TestMomentsAPI:
                 assert r.json()["data"]["liked"] is True
                 assert r.json()["data"]["likes"] == 1
         finally:
-            await _cleanup_user(user.id)
+            await _cleanup_user(test_session_maker, user.id)
 
     @pytest.mark.asyncio
-    async def test_comment_crud_and_count(self):
+    async def test_comment_crud_and_count(self, test_app, test_session_maker):
         """Comment create, list, delete, and comment_count consistency."""
-        u1 = await _create_test_user()
-        u2 = await _create_test_user()
+        u1 = await _create_test_user(test_session_maker)
+        u2 = await _create_test_user(test_session_maker)
         try:
-            app = create_app()
-            transport = ASGITransport(app=app)
+            transport = ASGITransport(app=test_app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 r = await client.post("/api/v1/moments", json={"content": "c_test"}, headers=_token(u1))
                 mid = r.json()["data"]["id"]
@@ -240,14 +232,13 @@ class TestMomentsAPI:
                 target = [m for m in r.json()["data"]["moments"] if m["id"] == mid][0]
                 assert target["comment_count"] == 0
         finally:
-            await _cleanup_user(u1.id)
-            await _cleanup_user(u2.id)
+            await _cleanup_user(test_session_maker, u1.id)
+            await _cleanup_user(test_session_maker, u2.id)
 
     @pytest.mark.asyncio
-    async def test_not_found(self):
+    async def test_not_found(self, test_app):
         """Non-existent moment returns proper error."""
-        app = create_app()
-        transport = ASGITransport(app=app)
+        transport = ASGITransport(app=test_app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             r = await client.get("/api/v1/moments/999999/comments")
             assert r.json()["error"]["code"] == "NOT_FOUND"

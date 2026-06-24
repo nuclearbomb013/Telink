@@ -29,6 +29,8 @@ export interface RegisterCredentials {
   email: string;
   /** 密码 */
   password: string;
+  /** 头像 URL */
+  avatar?: string;
   /** 个人简介 */
   bio?: string;
 }

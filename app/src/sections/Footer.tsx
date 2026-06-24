@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { gsap } from 'gsap';
+import { gsap } from '@/lib/gsap';
+import { useReduceMotion } from '@/hooks/useReduceMotion';
+import { EASING, DURATION } from '@/constants/animation.constants';
 import { ArrowUp, Instagram, Twitter, Youtube } from 'lucide-react';
-import { footerConfig } from '@/config';
+import { footerConfig } from '@/config/footer.config';
 
 const footerRouteMap: Record<string, string> = {
   '首页': '/',
@@ -28,14 +30,13 @@ const Footer = () => {
   const [isEmailFocused, setIsEmailFocused] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const prefersReducedMotion = useReduceMotion();
 
   // Check if we should render
   const shouldRender = Boolean(footerConfig.copyright || footerConfig.newsletterTitle);
 
   useEffect(() => {
     if (!shouldRender) return;
-
-    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     if (prefersReducedMotion) {
       return;
@@ -49,8 +50,8 @@ const Footer = () => {
         {
           scale: 1,
           opacity: 1,
-          duration: 0.8,
-          ease: 'power3.out',
+          duration: DURATION.slow,
+          ease: EASING.power3Out,
           scrollTrigger: {
             trigger: footerRef.current,
             start: 'top 90%',
@@ -62,7 +63,7 @@ const Footer = () => {
     }, footerRef);
 
     return () => ctx.revert();
-  }, [shouldRender]);
+  }, [shouldRender, prefersReducedMotion]);
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();

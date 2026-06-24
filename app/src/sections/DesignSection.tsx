@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { gsap } from 'gsap';
-import { designConfig } from '@/config';
+import { gsap } from '@/lib/gsap';
+import { useReduceMotion } from '@/hooks/useReduceMotion';
+import { EASING, DURATION, STAGGER } from '@/constants/animation.constants';
+import { designConfig } from '@/config/design.config';
 
 /**
  * Design Section Component
@@ -13,14 +15,13 @@ const DesignSection = () => {
   const titleRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const [hoveredItem, setHoveredItem] = useState<number | null>(null);
+  const prefersReducedMotion = useReduceMotion();
 
   // Check if we should render
   const shouldRender = Boolean(designConfig.sectionTitle || designConfig.items.length > 0);
 
   useEffect(() => {
     if (!shouldRender) return;
-
-    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     if (prefersReducedMotion) {
       return;
@@ -34,8 +35,8 @@ const DesignSection = () => {
         {
           y: 0,
           opacity: 1,
-          duration: 0.8,
-          ease: 'power3.out',
+          duration: DURATION.slow,
+          ease: EASING.power3Out,
           scrollTrigger: {
             trigger: titleRef.current,
             start: 'top 85%',
@@ -50,16 +51,16 @@ const DesignSection = () => {
           gsap.fromTo(
             item,
             { y: 50, opacity: 0 },
-            {
-              y: 0,
-              opacity: 1,
-              duration: 0.6,
-              ease: 'power3.out',
-              scrollTrigger: {
-                trigger: item,
-                start: 'top 90%',
-              },
-              delay: (index % 3) * 0.1,
+          {
+            y: 0,
+            opacity: 1,
+            duration: DURATION.medium,
+            ease: EASING.power3Out,
+            scrollTrigger: {
+              trigger: item,
+              start: 'top 90%',
+            },
+            delay: (index % 3) * STAGGER.normal,
             }
           );
         });
@@ -67,7 +68,7 @@ const DesignSection = () => {
     }, sectionRef);
 
     return () => ctx.revert();
-  }, [shouldRender]);
+  }, [shouldRender, prefersReducedMotion]);
 
   const handleTileHover = (id: number | null) => {
     setHoveredItem(id);

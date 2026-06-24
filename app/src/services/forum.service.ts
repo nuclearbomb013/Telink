@@ -415,20 +415,6 @@ class ForumService {
   }
 
   /**
-   * 增加回复数（后端自动处理，此方法保留以兼容）
-   */
-  async incrementReplyCount(_postId: number): Promise<void> {
-    // 后端在创建评论时自动增加回复数
-  }
-
-  /**
-   * 减少回复数（后端自动处理，此方法保留以兼容）
-   */
-  async decrementReplyCount(_postId: number): Promise<void> {
-    // 后端在删除评论时自动减少回复数
-  }
-
-  /**
    * 获取统计信息
    */
   async getStats(): Promise<ForumServiceResponse<ForumStats>> {

@@ -186,14 +186,15 @@ const ProfileEditPage: React.FC = () => {
 
       try {
         const response = await uploadApi.uploadImage(file);
-        if (response.success && response.data) {
+        if (response.success && response.data?.url) {
           setFormData((prev) => ({ ...prev, avatarUrl: response.data!.url }));
         } else {
-          setAvatarError(response.error?.message || '上传失败，请稍后重试');
+          const errMsg = response.error?.message || '上传失败，请稍后重试';
+          setAvatarError(response.error?.code === 'UNAUTHORIZED' ? '登录已过期，请重新登录' : errMsg);
         }
       } catch (error) {
         console.warn('Avatar upload error:', error);
-        setAvatarError('上传失败，请稍后重试');
+        setAvatarError(error instanceof Error ? error.message : '上传失败，请稍后重试');
       } finally {
         setIsUploading(false);
       }
@@ -207,16 +208,23 @@ const ProfileEditPage: React.FC = () => {
       setAvatarError(null);
       setIsUploading(true);
 
+      if (!file || file.size === 0) {
+        setAvatarError('像素头像文件无效');
+        setIsUploading(false);
+        return;
+      }
+
       try {
         const response = await uploadApi.uploadImage(file);
-        if (response.success && response.data) {
+        if (response.success && response.data?.url) {
           setFormData((prev) => ({ ...prev, avatarUrl: response.data!.url }));
         } else {
-          setAvatarError(response.error?.message || '上传失败，请稍后重试');
+          const errMsg = response.error?.message || '上传失败，请稍后重试';
+          setAvatarError(response.error?.code === 'UNAUTHORIZED' ? '登录已过期，请重新登录' : errMsg);
         }
       } catch (error) {
         console.warn('Pixel avatar upload error:', error);
-        setAvatarError('上传失败，请稍后重试');
+        setAvatarError(error instanceof Error ? error.message : '上传失败，请稍后重试');
       } finally {
         setIsUploading(false);
       }
@@ -282,11 +290,13 @@ const ProfileEditPage: React.FC = () => {
         // 跳转到个人主页
         navigate(`/user/${currentUser.id}`);
       } else {
-        setSaveError(response.error?.message || '保存失败，请稍后重试');
+        const errCode = response.error?.code;
+        const errMsg = response.error?.message || '保存失败，请稍后重试';
+        setSaveError(errCode === 'UNAUTHORIZED' ? '登录已过期，请重新登录' : errMsg);
       }
     } catch (error) {
       console.warn('Save error:', error);
-      setSaveError('保存失败，请稍后重试');
+      setSaveError(error instanceof Error ? error.message : '保存失败，请稍后重试');
     } finally {
       setIsSaving(false);
     }

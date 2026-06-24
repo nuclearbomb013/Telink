@@ -1,65 +1,34 @@
 /**
  * ForumComment - 论坛评论组件
  *
- * 显示单条评论及其回复
+ * 顶级评论为独立暖纸卡片，子回复使用引导线布局。
  */
 
 import { useState } from 'react';
-import { MessageSquare, Reply } from 'lucide-react';
+import { MessageSquare, Heart, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { formatRelativeTime } from '@/lib/dateUtils';
 
 import type { Comment } from '@/services/comment.types';
 import UserAvatar from './UserAvatar';
-import VoteButton from './VoteButton';
+import MarkdownRenderer from '@/components/MarkdownRenderer';
 
 export interface ForumCommentProps {
-  /** 评论数据 */
   comment: Comment;
-  /** 是否是回复 */
   isReply?: boolean;
-  /** 回复列表 */
+  depth?: number;
   replies?: Comment[];
-  /** 点赞回调 */
   onLike?: (commentId: number) => void;
-  /** 回复回调 */
   onReply?: (comment: Comment) => void;
-  /** 删除回调 */
   onDelete?: (commentId: number) => void;
-  /** 当前用户 ID */
   currentUserId?: number;
-  /** 自定义类名 */
   className?: string;
 }
 
-/**
- * 格式化时间
- */
-function formatTime(timestamp: number): string {
-  const now = Date.now();
-  const diff = now - timestamp;
-
-  const minute = 60 * 1000;
-  const hour = 60 * minute;
-  const day = 24 * hour;
-
-  if (diff < minute) return '刚刚';
-  if (diff < hour) return `${Math.floor(diff / minute)} 分钟前`;
-  if (diff < day) return `${Math.floor(diff / hour)} 小时前`;
-
-  return new Date(timestamp).toLocaleDateString('zh-CN', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-/**
- * ForumComment 组件
- */
 const ForumComment = ({
   comment,
   isReply = false,
+  depth = 0,
   replies = [],
   onLike,
   onReply,
@@ -70,147 +39,175 @@ const ForumComment = ({
   const [isLiked, setIsLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(comment.likes);
   const [showReplies, setShowReplies] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const isAuthor = currentUserId === comment.authorId;
+  const visualDepth = Math.min(depth, 1);
 
   const handleLike = () => {
     const newLikedState = !isLiked;
     setIsLiked(newLikedState);
     setLikeCount(prev => newLikedState ? prev + 1 : prev - 1);
-
-    if (onLike) {
-      onLike(comment.id);
-    }
+    onLike?.(comment.id);
   };
 
-  const handleReplyClick = () => {
-    if (onReply) {
-      onReply(comment);
-    }
-  };
-
-  const handleDeleteClick = () => {
-    if (confirm('确定要删除这条评论吗？')) {
-      if (onDelete) {
-        onDelete(comment.id);
-      }
-    }
+  const handleDeleteClick = () => setShowDeleteConfirm(true);
+  const confirmDelete = () => {
+    onDelete?.(comment.id);
+    setShowDeleteConfirm(false);
   };
 
   return (
     <div
       className={cn(
-        'flex gap-3 py-4',
-        isReply ? 'border-l-2 border-brand-border/30 pl-4 ml-4' : 'border-b border-brand-border/30',
-        className
+        isReply
+          ? cn(
+              'reply-thread relative',
+              visualDepth === 0 && 'ml-0 pl-4 border-l-2 border-[rgba(49,91,72,0.2)]',
+              visualDepth >= 1 && 'ml-0 pl-4 border-l-2 border-[rgba(49,91,72,0.12)]',
+            )
+          : 'comment-card mb-3',
+        className,
       )}
     >
-      {/* 头像 */}
-      <div className="shrink-0">
-        <UserAvatar
-          username={comment.authorName}
-          avatarUrl={comment.authorAvatar}
-          size="sm"
-        />
-      </div>
-
-      {/* 内容 */}
-      <div className="flex-1 min-w-0">
-        {/* 评论头部 */}
+      <div
+        className={cn(
+          isReply
+            ? 'bg-[rgba(242,240,232,0.5)] rounded-md p-3'
+            : cn(
+                'bg-[var(--card-bg)] border border-[var(--reader-line,#CFCEC4)] rounded-xl p-4 lg:p-5',
+                'shadow-[0_4px_18px_rgb(36_39_34_/_0.06)]',
+                'transition-all duration-200 hover:border-[rgba(49,91,72,0.2)]',
+              ),
+        )}
+      >
+        {/* Header */}
         <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <span className="font-roboto font-medium text-sm text-brand-text">
+          <div className="flex items-center gap-2 min-w-0">
+            <UserAvatar
+              username={comment.authorName}
+              avatarUrl={comment.authorAvatar}
+              size="sm"
+            />
+            <span className="font-medium text-sm truncate" style={{ color: 'var(--reader-ink, #242722)' }}>
               {comment.authorName}
             </span>
             {isAuthor && (
-              <span className="px-1.5 py-0.5 bg-brand-text/10 text-brand-text text-xs rounded">
+              <span className="shrink-0 px-1.5 py-0.5 text-[11px] rounded-sm font-medium border"
+                style={{
+                  background: 'rgba(49,91,72,0.08)',
+                  color: 'var(--reader-green, #315B48)',
+                  borderColor: 'rgba(49,91,72,0.2)',
+                }}>
                 作者
               </span>
             )}
             {comment.replyToName && (
-              <>
-                <span className="text-brand-light-gray text-xs">·</span>
-                <span className="font-roboto text-xs text-brand-dark-gray/60">
-                  回复 <span className="text-brand-text">@{comment.replyToName}</span>
-                </span>
-              </>
+              <span className="text-xs truncate" style={{ color: 'var(--reader-ink-secondary, #62675F)' }}>
+                回复 @{comment.replyToName}
+              </span>
             )}
-            <span className="font-roboto text-xs text-brand-light-gray">
-              · {formatTime(comment.createdAt)}
-            </span>
           </div>
+          <span className="shrink-0 text-xs ml-2" style={{ color: 'var(--reader-ink-secondary, #62675F)' }}>
+            {formatRelativeTime(comment.createdAt)}
+          </span>
         </div>
 
-        {/* 评论内容 */}
-        <div className="font-roboto text-sm text-brand-dark-gray leading-relaxed whitespace-pre-wrap">
-          {comment.content}
+        {/* Content */}
+        <div
+          className="comment-body break-words"
+          style={{
+            fontSize: '15px',
+            lineHeight: '1.75',
+            color: 'var(--reader-ink, #242722)',
+          }}
+        >
+          <MarkdownRenderer content={comment.content} mode="preview" />
         </div>
 
-        {/* 操作按钮 */}
-        <div className="flex items-center gap-4 mt-3">
-          {/* 点赞按钮 */}
-          <VoteButton
-            votes={likeCount}
-            hasVoted={isLiked}
-            onVoteChange={handleLike}
-            size="sm"
-            variant="outline"
-          />
-
-          {/* 回复按钮 */}
+        {/* Actions */}
+        <div className="flex items-center gap-1 mt-3">
           <button
             type="button"
-            className="inline-flex items-center gap-1 text-brand-dark-gray/60 hover:text-brand-text transition-colors"
-            onClick={handleReplyClick}
+            onClick={handleLike}
+            className={cn(
+              'inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors',
+              isLiked
+                ? 'text-[var(--reader-green,#315B48)] bg-[rgba(49,91,72,0.06)]'
+                : 'hover:bg-[rgba(49,91,72,0.04)]',
+            )}
+            style={{ color: isLiked ? 'var(--reader-green, #315B48)' : 'var(--reader-ink-secondary, #62675F)' }}
           >
-            <Reply size={14} />
-            <span className="font-roboto text-xs">回复</span>
+            <Heart size={13} fill={isLiked ? 'currentColor' : 'none'} />
+            {likeCount > 0 && <span className="tabular-nums">{likeCount}</span>}
           </button>
 
-          {/* 删除按钮（仅作者可见） */}
+          <button
+            type="button"
+            onClick={() => onReply?.(comment)}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors hover:bg-[rgba(49,91,72,0.04)]"
+            style={{ color: 'var(--reader-ink-secondary, #62675F)' }}
+          >
+            <MessageSquare size={13} />
+            <span>回复</span>
+          </button>
+
           {isAuthor && (
             <button
               type="button"
-              className="ml-auto text-brand-light-gray hover:text-brand-text transition-colors text-xs"
               onClick={handleDeleteClick}
+              className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors hover:bg-[rgba(220,38,38,0.06)]"
+              style={{ color: 'var(--reader-ink-secondary, #62675F)' }}
             >
-              删除
+              <Trash2 size={13} />
             </button>
           )}
         </div>
 
-        {/* 回复列表 */}
-        {replies && replies.length > 0 && (
-          <div className="mt-4">
-            {!showReplies && replies.length > 1 && (
-              <button
-                type="button"
-                className="flex items-center gap-1 text-brand-dark-gray/60 hover:text-brand-text transition-colors text-sm mb-2"
-                onClick={() => setShowReplies(true)}
-              >
-                <MessageSquare size={14} />
-                <span>查看全部 {replies.length} 条回复</span>
-              </button>
-            )}
-
-            {(showReplies || replies.length <= 1) && (
-              <div className="space-y-2">
-                {replies.map((reply) => (
-                  <ForumComment
-                    key={reply.id}
-                    comment={reply}
-                    isReply
-                    onLike={onLike}
-                    onReply={onReply}
-                    onDelete={onDelete}
-                    currentUserId={currentUserId}
-                  />
-                ))}
-              </div>
-            )}
+        {/* Delete confirmation */}
+        {showDeleteConfirm && (
+          <div className="mt-2 p-2 rounded-md text-xs border flex items-center gap-2" style={{ borderColor: 'rgba(220,38,38,0.2)', background: 'rgba(220,38,38,0.04)' }}>
+            <span style={{ color: 'rgb(185,28,28)' }}>确认删除？</span>
+            <button onClick={confirmDelete} className="px-2 py-0.5 rounded-sm text-white bg-red-600 hover:bg-red-700 transition-colors">删除</button>
+            <button onClick={() => setShowDeleteConfirm(false)} className="px-2 py-0.5 rounded-sm border transition-colors" style={{ borderColor: 'var(--reader-line, #CFCEC4)' }}>取消</button>
           </div>
         )}
       </div>
+
+      {/* Nested replies */}
+      {replies && replies.length > 0 && (
+        <div className="mt-2">
+          {!showReplies && replies.length > 1 && (
+            <button
+              type="button"
+              onClick={() => setShowReplies(true)}
+              className="flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors hover:bg-[rgba(49,91,72,0.04)]"
+              style={{ color: 'var(--reader-green, #315B48)' }}
+            >
+              <MessageSquare size={12} />
+              查看全部 {replies.length} 条回复
+            </button>
+          )}
+
+          {(showReplies || replies.length <= 1) && (
+            <div className={cn(replies.length > 1 && 'mt-2')}>
+              {replies.map(reply => (
+                <ForumComment
+                  key={reply.id}
+                  comment={reply}
+                  isReply
+                  depth={depth + 1}
+                  replies={reply.replies}
+                  onLike={onLike}
+                  onReply={onReply}
+                  onDelete={onDelete}
+                  currentUserId={currentUserId}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

@@ -5,8 +5,9 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { gsap } from 'gsap';
+import { gsap } from '@/lib/gsap';
 import { useReduceMotion } from '@/hooks/useReduceMotion';
 import { cn } from '@/lib/utils';
 import { EASING, DURATION } from '@/constants/animation.constants';
@@ -22,6 +23,7 @@ interface NewsTimelineProps {
 }
 
 const NewsTimeline: React.FC<NewsTimelineProps> = ({ className = '' }) => {
+  const navigate = useNavigate();
   const [newsItems, setNewsItems] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
@@ -101,11 +103,11 @@ const NewsTimeline: React.FC<NewsTimelineProps> = ({ className = '' }) => {
     );
   }, []);
 
-  // 点击项目处理
+  // 点击项目处理 — 跳转到资讯详情阅读页
   const handleItemClick = useCallback((item: NewsItem) => {
     setActiveItemId(item.id);
-    // Navigation or other click handling can be added here
-  }, []);
+    navigate(`/news/${item.id}`);
+  }, [navigate]);
 
   // 处理侧边栏滚轮事件，防止滚动影响整个页面
   const handleSidebarWheel = useCallback((e: React.WheelEvent) => {

@@ -9,25 +9,9 @@ import { Link } from 'react-router-dom';
 import { Bell, Check, Trash2, X } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
+import { formatRelativeTime } from '@/lib/dateUtils';
 import { useNotifications } from '@/hooks/useNotifications';
 import type { Notification } from '@/services/notification.types';
-
-/**
- * 格式化相对时间
- */
-function formatRelativeTime(timestamp: number): string {
-  const now = Date.now();
-  const diff = now - timestamp;
-
-  const minute = 60 * 1000;
-  const hour = 60 * minute;
-  const day = 24 * hour;
-
-  if (diff < minute) return '刚刚';
-  if (diff < hour) return `${Math.floor(diff / minute)} 分钟前`;
-  if (diff < day) return `${Math.floor(diff / hour)} 小时前`;
-  return `${Math.floor(diff / day)} 天前`;
-}
 
 /**
  * 获取通知类型的样式
@@ -119,9 +103,10 @@ const NotificationBell = () => {
           />
 
           {/* 下拉面板 */}
-          <div className="absolute right-0 mt-2 w-80 max-h-[500px] bg-white rounded-lg shadow-xl border border-brand-border/30 z-50 flex flex-col overflow-hidden">
+          <div className="absolute right-0 mt-2 w-80 max-h-[500px] rounded-xl shadow-[0_4px_18px_rgb(36_39_34_/_0.08)] border z-50 flex flex-col overflow-hidden"
+            style={{ background: 'var(--card-bg,#F2F0E8)', borderColor: 'var(--reader-line,#CFCEC4)' }}>
             {/* 头部 */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-brand-border/30">
+            <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--reader-line,#CFCEC4)' }}>
               <div className="flex items-center gap-2">
                 <h3 className="font-oswald text-base font-light text-brand-text">
                   通知
@@ -239,7 +224,7 @@ const NotificationBell = () => {
 
             {/* 底部链接 */}
             {notifications.length > 0 && (
-              <div className="px-4 py-2 border-t border-brand-border/30 bg-brand-linen/30">
+              <div className="px-4 py-2" style={{ borderTop: '1px solid var(--reader-line,#CFCEC4)', background: 'rgba(242,240,232,0.5)' }}>
                 <Link
                   to="/notifications"
                   className="block text-center font-roboto text-xs text-brand-text hover:underline"

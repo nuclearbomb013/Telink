@@ -50,13 +50,15 @@ export const useLenis = (options: LenisOptions = {}) => {
     }
 
     // Direct wheel event listener to handle native scroll containers
+    const shouldUseNativeScroll = (node: Element | null) => {
+      if (!node || excludedSelectors.length === 0) return false;
+      return Boolean(node.closest(`${excludedSelectors.join(', ')}`));
+    };
+
     const handleWheel = (e: WheelEvent) => {
       const target = e.target as Element;
-      if (excludedSelectors.length > 0) {
-        const nativeScrollContainer = target.closest(`${excludedSelectors.join(', ')}`);
-        if (nativeScrollContainer) {
-          e.stopImmediatePropagation();
-        }
+      if (shouldUseNativeScroll(target)) {
+        e.stopImmediatePropagation();
       }
     };
 
@@ -71,6 +73,7 @@ export const useLenis = (options: LenisOptions = {}) => {
       touchMultiplier: 2,
       // Add infinite mode for better nested scroll support
       infinite: false,
+      prevent: (node) => shouldUseNativeScroll(node),
     });
 
     // Add global wheel event listener for excluded containers

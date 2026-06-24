@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { gsap } from 'gsap';
+import { gsap } from '@/lib/gsap';
 import { useReduceMotion } from '@/hooks/useReduceMotion';
 import { cn } from '@/lib/utils';
 import { EASING, DURATION } from '@/constants/animation.constants';

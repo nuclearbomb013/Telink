@@ -1,183 +1,222 @@
 /**
- * 文章投稿存储服务
- * 使用 localStorage 存储用户投稿的文章
+ * 文章投稿服务
+ * 使用后端 API 存储用户投稿的文章，localStorage 仅用于草稿缓存
  */
 
 import type { Article, CreateArticleData } from './articles.types';
+import { articleApi, type ArticleApiResponse } from '@/lib/apiClient';
 
-// Storage key for submitted articles
-const STORAGE_KEY = 'techink_submitted_articles';
+// Storage key for article drafts (offline cache)
+const DRAFT_KEY = 'techink_article_draft';
 
 /**
- * 生成 URL 友好的 slug
+ * 将后端 API 响应转换为前端 Article 类型
  */
-function generateSlug(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^\w\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .substring(0, 50);
+function apiToArticle(api: ArticleApiResponse): Article {
+  const date = api.published_at ? new Date(api.published_at) : new Date(api.created_at);
+  return {
+    id: api.id,
+    title: api.title,
+    subtitle: api.subtitle || '',
+    image: api.cover_image || '',
+    category: api.category,
+    content: api.content,
+    excerpt: api.excerpt,
+    author: api.author_name,
+    publishDate: date.toISOString().split('T')[0],
+    tags: api.tags,
+    slug: api.slug,
+    createdAt: api.created_at,
+    updatedAt: api.updated_at,
+  };
 }
 
 /**
- * 生成唯一 ID（从 1000 开始，避免与预设文章冲突）
+ * 获取所有已发布的投稿文章（从后端 API）
  */
-function generateId(): number {
-  const articles = getSubmittedArticles();
-  const maxId = articles.reduce((max, article) => Math.max(max, article.id), 999);
-  return maxId + 1;
-}
-
-/**
- * 计算阅读时间（按每分钟 300 字计算）
- */
-function calculateReadTime(content: string): number {
-  const words = content.length;
-  return Math.max(1, Math.ceil(words / 300));
-}
-
-/**
- * 获取所有投稿文章
- */
-export function getSubmittedArticles(): Article[] {
-  if (typeof window === 'undefined') {
-    return [];
-  }
-  
+export async function getSubmittedArticles(): Promise<Article[]> {
   try {
-    const data = localStorage.getItem(STORAGE_KEY);
-    if (!data) {
-      return [];
+    const response = await articleApi.getArticles({ limit: 100 });
+    if (response.success && response.data) {
+      return response.data.articles.map(apiToArticle);
     }
-    const articles = JSON.parse(data) as Article[];
-    // 按发布时间排序，最新的在前
-    return articles.sort((a, b) => 
-      new Date(b.publishDate || '').getTime() - new Date(a.publishDate || '').getTime()
-    );
+    return [];
   } catch (error) {
-    console.error('Error reading submitted articles:', error);
+    console.error('Error fetching submitted articles:', error);
     return [];
   }
 }
 
 /**
- * 根据 slug 或 ID 获取投稿文章
+ * 根据 slug 或 ID 获取投稿文章（从后端 API）
  */
-export function getSubmittedArticleBySlug(slug: string): Article | undefined {
-  const articles = getSubmittedArticles();
-  return articles.find(
-    article => article.slug === slug || article.id.toString() === slug
-  );
+export async function getSubmittedArticleBySlug(slug: string): Promise<Article | undefined> {
+  try {
+    const response = await articleApi.getArticleBySlug(slug);
+    if (response.success && response.data) {
+      return apiToArticle(response.data);
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
- * 提交新文章
+ * 提交新文章到后端
  */
-export function submitArticle(data: CreateArticleData): Article {
-  const now = new Date();
-  const publishDate = now.toISOString().split('T')[0];
-  
-  const newArticle: Article = {
-    id: generateId(),
+export async function submitArticle(data: CreateArticleData): Promise<Article> {
+  const response = await articleApi.createArticle({
     title: data.title,
-    subtitle: data.subtitle,
     content: data.content,
-    author: data.author,
     category: data.category,
     tags: data.tags || [],
-    image: data.image || '',
-    excerpt: data.excerpt || data.subtitle,
-    readTime: data.readTime || calculateReadTime(data.content),
-    slug: generateSlug(data.title) + '-' + now.getTime().toString(36),
-    publishDate,
-    createdAt: now.getTime(),
-    updatedAt: now.getTime(),
-  };
-  
-  const existingArticles = getSubmittedArticles();
-  const updatedArticles = [newArticle, ...existingArticles];
-  
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedArticles));
-  
-  return newArticle;
+    cover_image: data.image || undefined,
+    excerpt: data.excerpt || data.subtitle || undefined,
+    subtitle: data.subtitle || undefined,
+    status: 'published',
+  });
+
+  if (!response.success || !response.data) {
+    throw new Error(response.error?.message || '投稿失败');
+  }
+
+  // 清除草稿缓存
+  clearDraft();
+
+  return apiToArticle(response.data);
+}
+
+/**
+ * 保存草稿到后端
+ */
+export async function saveDraft(data: Partial<CreateArticleData>): Promise<Article | null> {
+  if (!data.title || !data.content) return null;
+
+  const response = await articleApi.createArticle({
+    title: data.title,
+    content: data.content,
+    category: data.category || 'frontend',
+    tags: data.tags || [],
+    cover_image: data.image || undefined,
+    excerpt: data.excerpt || data.subtitle || undefined,
+    subtitle: data.subtitle || undefined,
+    status: 'draft',
+  });
+
+  if (!response.success || !response.data) {
+    return null;
+  }
+
+  return apiToArticle(response.data);
 }
 
 /**
  * 更新投稿文章
  */
-export function updateSubmittedArticle(id: number, updates: Partial<CreateArticleData>): Article | null {
-  const articles = getSubmittedArticles();
-  const index = articles.findIndex(article => article.id === id);
-  
-  if (index === -1) {
+export async function updateSubmittedArticle(id: number, updates: Partial<CreateArticleData>): Promise<Article | null> {
+  const response = await articleApi.updateArticle(id, {
+    title: updates.title,
+    content: updates.content,
+    category: updates.category,
+    tags: updates.tags,
+    cover_image: updates.image,
+    excerpt: updates.excerpt,
+    subtitle: updates.subtitle,
+  });
+
+  if (!response.success || !response.data) {
     return null;
   }
-  
-  const updatedArticle: Article = {
-    ...articles[index],
-    ...updates,
-    updatedAt: Date.now(),
-  };
-  
-  if (updates.content && !updates.readTime) {
-    updatedArticle.readTime = calculateReadTime(updates.content);
-  }
-  
-  articles[index] = updatedArticle;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(articles));
-  
-  return updatedArticle;
+
+  return apiToArticle(response.data);
 }
 
 /**
  * 删除投稿文章
  */
-export function deleteSubmittedArticle(id: number): boolean {
-  const articles = getSubmittedArticles();
-  const filtered = articles.filter(article => article.id !== id);
-  
-  if (filtered.length === articles.length) {
-    return false;
-  }
-  
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
-  return true;
+export async function deleteSubmittedArticle(id: number): Promise<boolean> {
+  const response = await articleApi.deleteArticle(id);
+  return response.success;
 }
 
 /**
  * 获取投稿文章总数
  */
-export function getSubmittedArticleCount(): number {
-  return getSubmittedArticles().length;
+export async function getSubmittedArticleCount(): Promise<number> {
+  try {
+    const response = await articleApi.getArticles({ limit: 1 });
+    if (response.success && response.data) {
+      return response.data.total;
+    }
+    return 0;
+  } catch {
+    return 0;
+  }
+}
+
+// ==================== 草稿本地缓存（防丢失） ====================
+
+export interface DraftData {
+  title: string;
+  subtitle: string;
+  author: string;
+  category: string;
+  content: string;
+  tags: string;
+  coverImage: string;
+  savedAt: number;
 }
 
 /**
- * 清除所有投稿文章（用于测试）
+ * 保存草稿到 localStorage（防丢失缓存）
  */
-export function clearSubmittedArticles(): void {
-  localStorage.removeItem(STORAGE_KEY);
+export function saveDraftToLocal(data: Omit<DraftData, 'savedAt'>): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const draft: DraftData = { ...data, savedAt: Date.now() };
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+  } catch (error) {
+    console.error('Error saving draft:', error);
+  }
 }
 
 /**
- * 搜索投稿文章
+ * 从 localStorage 恢复草稿
  */
-export function searchSubmittedArticles(query: string): Article[] {
-  const articles = getSubmittedArticles();
-  const lowerQuery = query.toLowerCase();
-  
-  return articles.filter(article =>
-    article.title.toLowerCase().includes(lowerQuery) ||
-    article.subtitle.toLowerCase().includes(lowerQuery) ||
-    article.category.toLowerCase().includes(lowerQuery) ||
-    article.author?.toLowerCase().includes(lowerQuery) ||
-    article.tags?.some(tag => tag.toLowerCase().includes(lowerQuery))
-  );
+export function loadDraftFromLocal(): DraftData | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const data = localStorage.getItem(DRAFT_KEY);
+    if (!data) return null;
+    return JSON.parse(data) as DraftData;
+  } catch {
+    return null;
+  }
 }
 
 /**
- * 按分类获取投稿文章
+ * 清除草稿缓存
  */
-export function getSubmittedArticlesByCategory(category: string): Article[] {
-  const articles = getSubmittedArticles();
-  return articles.filter(article => article.category === category);
+export function clearDraft(): void {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem(DRAFT_KEY);
+}
+
+/**
+ * 检查是否有未恢复的草稿
+ */
+export function hasDraft(): boolean {
+  if (typeof window === 'undefined') return false;
+  return !!localStorage.getItem(DRAFT_KEY);
+}
+
+// ==================== 向后兼容（同步 API 的旧调用方） ====================
+// 以下函数保持同步签名，返回空数组/null，引导调用方迁移到异步版本
+
+/**
+ * @deprecated 使用异步版本 getSubmittedArticles()
+ */
+export function getSubmittedArticlesSync(): Article[] {
+  return [];
 }

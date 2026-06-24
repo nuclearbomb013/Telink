@@ -6,7 +6,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { gsap } from 'gsap';
+import { gsap } from '@/lib/gsap';
 import { Search, X } from 'lucide-react';
 import DeveloperCard from '@/components/Developers/DeveloperCard';
 import DeveloperFilters from '@/components/Developers/DeveloperFilters';

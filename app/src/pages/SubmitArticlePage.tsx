@@ -9,9 +9,9 @@ import {
   Edit3,
   FileUp,
   AlertCircle,
-  RotateCcw
+  RotateCcw,
+  PenLine
 } from 'lucide-react';
-import { submitArticle } from '@/services/submission.service';
 import {
   parseDocument,
   validateDocumentFile,
@@ -20,7 +20,9 @@ import {
 } from '@/lib/documentParser';
 import MarkdownRenderer from '@/components/MarkdownRenderer';
 import CoverImageUploader from '@/components/CoverImageUploader';
+import ArticleEditor from '@/components/ArticleEditor';
 import type { CreateArticleData } from '@/services/articles.types';
+import { submitArticle, saveDraftToLocal, loadDraftFromLocal, clearDraft, hasDraft } from '@/services/submission.service';
 
 type SubmitStep = 'upload' | 'preview' | 'edit' | 'success';
 
@@ -64,16 +66,84 @@ const SubmitArticlePage = () => {
     coverImage: '',
   });
 
-  const categories = [
-    '前端开发',
-    '后端架构',
-    '人工智能',
-    '开源项目',
-    '职业发展',
-    '编程语言',
-    '系统设计',
-    '开发工具',
+  const categories: Array<{ value: string; label: string }> = [
+    { value: 'frontend', label: '前端开发' },
+    { value: 'backend', label: '后端架构' },
+    { value: 'ai', label: '人工智能' },
+    { value: 'opensource', label: '开源项目' },
+    { value: 'career', label: '职业发展' },
+    { value: 'language', label: '编程语言' },
+    { value: 'system', label: '系统设计' },
+    { value: 'tools', label: '开发工具' },
   ];
+
+  const [isDirty, setIsDirty] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
+
+  // Restore draft on mount
+  useEffect(() => {
+    if (hasDraft()) {
+      setDraftRestored(true);
+    }
+  }, []);
+
+  // Auto-save draft to localStorage (debounced 3s)
+  useEffect(() => {
+    if (!isDirty || currentStep === 'success') return;
+    const timer = setTimeout(() => {
+      saveDraftToLocal({
+        title: formData.title,
+        subtitle: formData.subtitle,
+        author: formData.author,
+        category: formData.category,
+        content: formData.content,
+        tags: formData.tags,
+        coverImage: formData.coverImage,
+      });
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [formData, isDirty, currentStep]);
+
+  // Warn before leaving with unsaved changes
+  useEffect(() => {
+    if (!isDirty || currentStep === 'success') return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty, currentStep]);
+
+  // Restore draft
+  const handleRestoreDraft = () => {
+    const draft = loadDraftFromLocal();
+    if (draft) {
+      setFormData({
+        title: draft.title,
+        subtitle: draft.subtitle,
+        author: draft.author,
+        category: draft.category,
+        content: draft.content,
+        tags: draft.tags,
+        coverImage: draft.coverImage,
+      });
+      setCurrentStep('edit');
+      setIsDirty(true);
+    }
+    setDraftRestored(false);
+  };
+
+  const handleDiscardDraft = () => {
+    clearDraft();
+    setDraftRestored(false);
+  };
+
+  // Mark dirty on form changes
+  const handleFieldChange = (field: keyof typeof formData, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    setIsDirty(true);
+  };
 
   // Handle file selection
   const handleFileSelect = useCallback(async (file: File) => {
@@ -139,7 +209,7 @@ const SubmitArticlePage = () => {
   // Handle form field changes
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    handleFieldChange(name as keyof typeof formData, value);
     if (error) setError(null);
   };
 
@@ -181,8 +251,9 @@ const SubmitArticlePage = () => {
         excerpt: formData.subtitle || formData.title,
       };
 
-      const submittedArticle = submitArticle(articleData);
+      const submittedArticle = await submitArticle(articleData);
       setCurrentStep('success');
+      setIsDirty(false);
 
       // Redirect after success — store timer ID for cleanup on unmount
       redirectTimerRef.current = window.setTimeout(() => {
@@ -217,9 +288,51 @@ const SubmitArticlePage = () => {
     }
   };
 
+  const handleStartBlank = () => {
+    setParsedDoc(null);
+    setUploadedFile(null);
+    setFormData({
+      title: '',
+      subtitle: '',
+      author: '',
+      category: '',
+      content: '# New Article\n\nStart writing here.\n\n## Section\n\n',
+      tags: '',
+      coverImage: '',
+    });
+    setError(null);
+    setCurrentStep('edit');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   // Render upload step
   const renderUploadStep = () => (
     <div className="space-y-8">
+      {/* Draft restore banner */}
+      {draftRestored && (
+        <div className="flex items-center justify-between gap-4 rounded-xl border border-amber-300 bg-amber-50 px-5 py-3">
+          <span className="text-sm text-amber-800">检测到未完成的草稿，是否恢复？</span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleRestoreDraft}
+              className="rounded-lg bg-amber-600 px-4 py-1.5 text-sm text-white transition-colors hover:bg-amber-700"
+            >
+              恢复草稿
+            </button>
+            <button
+              type="button"
+              onClick={handleDiscardDraft}
+              className="rounded-lg border border-amber-300 px-4 py-1.5 text-sm text-amber-800 transition-colors hover:bg-amber-100"
+            >
+              丢弃
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Upload area */}
       <div
         onClick={() => fileInputRef.current?.click()}
@@ -263,6 +376,17 @@ const SubmitArticlePage = () => {
             </p>
           </>
         )}
+      </div>
+
+      <div className="flex justify-center">
+        <button
+          type="button"
+          onClick={handleStartBlank}
+          className="inline-flex items-center justify-center gap-2 rounded-2xl bg-brand-text px-6 py-3 font-roboto text-sm uppercase tracking-wider text-white transition-all duration-300 hover:bg-brand-dark-gray"
+        >
+          <PenLine size={16} />
+          Start from blank
+        </button>
       </div>
 
       {/* Guidelines */}
@@ -476,8 +600,8 @@ const SubmitArticlePage = () => {
             className="w-full px-4 py-3 font-roboto text-brand-text bg-white/90 backdrop-blur-sm border border-brand-border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-text/30 focus:border-brand-text transition-all appearance-none cursor-pointer"
           >
             <option value="">选择文章分类</option>
-            {categories.map(category => (
-              <option key={category} value={category}>{category}</option>
+            {categories.map(cat => (
+              <option key={cat.value} value={cat.value}>{cat.label}</option>
             ))}
           </select>
         </div>
@@ -486,7 +610,7 @@ const SubmitArticlePage = () => {
         <div>
           <CoverImageUploader
             value={formData.coverImage || null}
-            onChange={(imageData) => setFormData(prev => ({ ...prev, coverImage: imageData || '' }))}
+            onChange={(imageData) => { setFormData(prev => ({ ...prev, coverImage: imageData || '' })); setIsDirty(true); }}
             onError={(error) => setError(error)}
             disabled={isSubmitting}
             label="封面图片"
@@ -521,19 +645,14 @@ const SubmitArticlePage = () => {
           <label className="block font-roboto text-sm font-medium text-brand-text mb-2">
             文章内容
           </label>
-          <div className="border border-brand-border rounded-lg overflow-hidden bg-white max-h-[300px] overflow-y-auto">
-            <div className="p-4">
-              {formData.content && typeof formData.content === 'string' ? (
-                <MarkdownRenderer content={formData.content} />
-              ) : (
-                <p className="font-roboto text-brand-dark-gray/50 text-center">
-                  暂无内容
-                </p>
-              )}
-            </div>
-          </div>
+          <ArticleEditor
+            value={formData.content}
+            onChange={(content) => { setFormData(prev => ({ ...prev, content })); setIsDirty(true); }}
+            disabled={isSubmitting}
+            onError={setError}
+          />
           <p className="mt-2 font-roboto text-xs text-brand-dark-gray">
-            如需修改内容，请重新上传文件
+            Use headings to build the outline automatically. Insert code blocks and images from the toolbar.
           </p>
         </div>
       </div>
@@ -593,7 +712,7 @@ const SubmitArticlePage = () => {
 
   return (
     <div className="min-h-screen bg-brand-linen pt-32 pb-20">
-      <div className="max-w-3xl mx-auto px-6 lg:px-12">
+      <div className={currentStep === 'edit' ? 'max-w-[1440px] mx-auto px-6 lg:px-10' : 'max-w-3xl mx-auto px-6 lg:px-12'}>
         {/* Back navigation */}
         {currentStep !== 'success' && (
           <div className="mb-8">

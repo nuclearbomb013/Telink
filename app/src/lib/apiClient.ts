@@ -324,6 +324,7 @@ export interface RegisterCredentials {
   username: string;
   email: string;
   password: string;
+  avatar?: string;
   bio?: string;
 }
 
@@ -356,8 +357,8 @@ export const authApi = {
   logout: () =>
     apiClient.post('/auth/logout'),
 
-  refresh: (refreshToken: string) =>
-    apiClient.post<TokenData>('/auth/refresh', { refreshToken }),
+  refresh: (refreshToken?: string) =>
+    apiClient.post<TokenData>('/auth/refresh', { refreshToken: refreshToken || '' }),
 
   getMe: () =>
     apiClient.get<AuthUser>('/auth/me'),
@@ -453,6 +454,41 @@ interface UserStatsRaw {
 }
 
 /**
+ * 后端返回的用户列表数据（snake_case）
+ */
+interface UserListResultRaw {
+  users: UserPublicRaw[];
+  total: number;
+  page: number;
+  limit: number;
+  total_pages: number;
+}
+
+/**
+ * 前端使用的用户列表数据（camelCase）
+ */
+export interface UserListResult {
+  users: UserPublic[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+/**
+ * 转换用户列表数据
+ */
+function transformUserList(raw: UserListResultRaw): UserListResult {
+  return {
+    users: raw.users.map(transformUserPublic),
+    total: raw.total,
+    page: raw.page,
+    limit: raw.limit,
+    totalPages: raw.total_pages,
+  };
+}
+
+/**
  * 将后端 snake_case 用户统计数据转换为前端 camelCase
  */
 function transformUserStats(raw: UserStatsRaw): UserStats {
@@ -466,6 +502,15 @@ function transformUserStats(raw: UserStatsRaw): UserStats {
 }
 
 export const userApi = {
+  list: async (params?: { search?: string; page?: number; limit?: number }): Promise<ServiceResponse<UserListResult>> => {
+    const query: Record<string, string | number | boolean> = {};
+    if (params?.search) query.search = params.search;
+    if (params?.page) query.page = params.page;
+    if (params?.limit) query.limit = params.limit;
+    const response = await apiClient.get<UserListResultRaw>('/users/list', query);
+    return mapResponse(response, transformUserList);
+  },
+
   getById: async (userId: number): Promise<ServiceResponse<UserPublic>> => {
     const response = await apiClient.get<UserPublicRaw>(`/users/${userId}`);
     return mapResponse(response, transformUserPublic);
@@ -1034,6 +1079,129 @@ export const momentApi = {
 
   deleteComment: (momentId: number, commentId: number) =>
     apiClient.delete(`/moments/${momentId}/comments/${commentId}`),
+};
+
+// ==================== 收藏 API ====================
+
+// ==================== 文章 (Articles) API ====================
+
+export interface ArticleApiData {
+  title: string;
+  content: string;
+  category: string;
+  tags?: string[];
+  cover_image?: string;
+  excerpt?: string;
+  subtitle?: string;
+  status?: 'draft' | 'pending' | 'published' | 'rejected';
+}
+
+export interface ArticleApiResponse {
+  id: number;
+  title: string;
+  slug: string;
+  content: string;
+  excerpt?: string;
+  subtitle?: string;
+  cover_image?: string;
+  author_id: number;
+  author_name: string;
+  author_avatar?: string;
+  category: string;
+  status: string;
+  tags: string[];
+  views: number;
+  likes: number;
+  is_featured: boolean;
+  published_at?: number;
+  created_at: number;
+  updated_at?: number;
+}
+
+export interface ArticleListResultApi {
+  articles: ArticleApiResponse[];
+  total: number;
+  page: number;
+  limit: number;
+  total_pages: number;
+}
+
+export const articleApi = {
+  getArticles: (params?: { category?: string; sortBy?: string; page?: number; limit?: number; search?: string }) =>
+    apiClient.get<ArticleListResultApi>('/articles', params as Record<string, string | number>),
+
+  getArticleBySlug: (slug: string) =>
+    apiClient.get<ArticleApiResponse>(`/articles/slug/${slug}`),
+
+  getArticleById: (id: number) =>
+    apiClient.get<ArticleApiResponse>(`/articles/${id}`),
+
+  getMyArticles: (params?: { status?: string; page?: number; limit?: number }) =>
+    apiClient.get<ArticleListResultApi>('/articles/me', params as Record<string, string | number>),
+
+  createArticle: (data: ArticleApiData) =>
+    apiClient.post<ArticleApiResponse>('/articles', data),
+
+  updateArticle: (id: number, data: Partial<ArticleApiData>) =>
+    apiClient.put<ArticleApiResponse>(`/articles/${id}`, data),
+
+  deleteArticle: (id: number) =>
+    apiClient.delete<{ message: string; id: number }>(`/articles/${id}`),
+
+  publishArticle: (id: number) =>
+    apiClient.post<ArticleApiResponse>(`/articles/${id}/publish`, {}),
+};
+
+// ==================== 收藏 (Favorites) API ====================
+
+export interface FavoritesCreateInput {
+  content_type: string;
+  content_id: number;
+  title?: string;
+}
+
+export interface FavoriteItem {
+  id: number;
+  user_id: number;
+  content_type: string;
+  content_id: number;
+  title: string | null;
+  created_at: number;
+  updated_at: number | null;
+}
+
+export interface FavoriteCheckResult {
+  favorited: boolean;
+  favorite_id: number | null;
+}
+
+export interface FavoriteListResult {
+  items: FavoriteItem[];
+  total: number;
+  page: number;
+  limit: number;
+  total_pages: number;
+}
+
+export const favoritesApi = {
+  list: (params?: { page?: number; limit?: number; content_type?: string }) =>
+    apiClient.get<FavoriteListResult>('/favorites', params as Record<string, string | number>),
+
+  add: (data: FavoritesCreateInput) =>
+    apiClient.post<FavoriteItem>('/favorites', data),
+
+  remove: (favoriteId: number) =>
+    apiClient.delete<{ removed: boolean; content_type: string; content_id: number }>(`/favorites/${favoriteId}`),
+
+  removeByContent: (contentType: string, contentId: number) =>
+    apiClient.delete<{ removed: boolean; content_type: string; content_id: number }>(
+      `/favorites/by-content?content_type=${encodeURIComponent(contentType)}&content_id=${contentId}`
+    ),
+
+  check: (contentType: string, contentId: number) =>
+    apiClient.get<FavoriteCheckResult>(
+      `/favorites/check?content_type=${encodeURIComponent(contentType)}&content_id=${contentId}`
+    ),
 };
 
 export default apiClient;

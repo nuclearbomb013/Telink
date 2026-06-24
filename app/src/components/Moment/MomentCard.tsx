@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { Heart, MessageCircle, Share2, MapPin, MoreHorizontal, Code, Image as ImageIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatRelativeTime } from '@/lib/dateUtils';
+import OptimizedImage from '@/components/OptimizedImage';
 import type { Moment, MomentImage, CodeSnippet } from '@/services/moment.types';
 import UserAvatar from '@/components/Forum/UserAvatar';
 
@@ -40,9 +41,11 @@ const ImageGrid = ({ images }: { images: MomentImage[] }) => {
     return (
       <div className="mt-3">
         <div className="relative overflow-hidden rounded-sm border border-brand-border/30">
-          <img
+          <OptimizedImage
             src={images[0].url}
             alt={images[0].caption || '动态图片'}
+            width={800}
+            height={600}
             className="w-full max-h-80 object-cover transition-all duration-700"
             loading="lazy"
           />
@@ -65,9 +68,11 @@ const ImageGrid = ({ images }: { images: MomentImage[] }) => {
             key={img.id}
             className="flex-1 relative overflow-hidden rounded-sm border border-brand-border/30 aspect-square"
           >
-            <img
+            <OptimizedImage
               src={img.url}
               alt={img.caption || `图片 ${index + 1}`}
+              width={200}
+              height={200}
               className="w-full h-full object-cover transition-all duration-700"
               loading="lazy"
             />
@@ -86,9 +91,11 @@ const ImageGrid = ({ images }: { images: MomentImage[] }) => {
             key={img.id}
             className="relative overflow-hidden rounded-sm border border-brand-border/30 aspect-square"
           >
-            <img
+            <OptimizedImage
               src={img.url}
               alt={img.caption || `图片 ${index + 1}`}
+              width={200}
+              height={200}
               className="w-full h-full object-cover transition-all duration-700"
               loading="lazy"
             />
@@ -106,12 +113,14 @@ const ImageGrid = ({ images }: { images: MomentImage[] }) => {
           key={img.id}
           className="relative overflow-hidden rounded-sm border border-brand-border/30 aspect-square"
         >
-          <img
-            src={img.url}
-            alt={img.caption || `图片 ${index + 1}`}
-            className="w-full h-full object-cover transition-all duration-700"
-            loading="lazy"
-          />
+            <OptimizedImage
+              src={img.url}
+              alt={img.caption || `图片 ${index + 1}`}
+              width={300}
+              height={300}
+              className="w-full h-full object-cover transition-all duration-700"
+              loading="lazy"
+            />
           {index === 8 && count > 9 && (
             <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
               <span className="text-white text-lg font-roboto">+{count - 9}</span>

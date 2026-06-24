@@ -3,9 +3,9 @@ User API Endpoints
 """
 
 from typing import Optional
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from app.api.deps import get_db, get_current_user
 from app.models.user import User, UserRole
@@ -15,11 +15,72 @@ from app.schemas import (
     UserResponse,
     UserPublic,
     UserUpdate,
-    UserStats
+    UserStats,
+    UserListResult
 )
 from app.core.security import validate_username
 
 router = APIRouter(prefix="/users", tags=["Users"])
+
+
+@router.get("/list", response_model=ServiceResponse[UserListResult])
+async def list_users(
+    search: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    List users with optional search and pagination.
+
+    Search matches against username and bio (case-insensitive).
+    """
+    conditions = [User.is_active.is_(True)]
+
+    if search:
+        search_term = f"%{search}%"
+        conditions.append(
+            User.username.ilike(search_term) | User.bio.ilike(search_term)
+        )
+
+    where_clause = conditions[0] if len(conditions) == 1 else conditions[0]
+    if len(conditions) > 1:
+        from sqlalchemy import and_
+        where_clause = and_(*conditions)
+
+    count_query = select(func.count(User.id)).where(where_clause)
+    result = await db.execute(count_query)
+    total = result.scalar() or 0
+
+    list_query = select(User).where(where_clause).offset((page - 1) * limit).limit(limit).order_by(User.id.asc())
+    result = await db.execute(list_query)
+    users = result.scalars().all()
+
+    total_pages = max(1, (total + limit - 1) // limit)
+
+    return ServiceResponse(
+        success=True,
+        data=UserListResult(
+            users=[
+                UserPublic(
+                    id=u.id,
+                    username=u.username,
+                    avatar=u.avatar,
+                    bio=u.bio,
+                    role=str(u.role.value) if hasattr(u.role, 'value') else str(u.role),
+                    post_count=u.post_count,
+                    comment_count=u.comment_count,
+                    like_count=u.like_count,
+                    created_at=int(u.created_at.timestamp() * 1000)
+                )
+                for u in users
+            ],
+            total=total,
+            page=page,
+            limit=limit,
+            total_pages=total_pages
+        )
+    )
 
 
 @router.get("/check-username", response_model=ServiceResponse[dict])

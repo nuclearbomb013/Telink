@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { gsap } from 'gsap';
+import { gsap } from '@/lib/gsap';
+import { useReduceMotion } from '@/hooks/useReduceMotion';
+import { EASING, DURATION, STAGGER } from '@/constants/animation.constants';
 import { Instagram, Twitter } from 'lucide-react';
-import { authorsConfig } from '@/config';
+import { authorsConfig } from '@/config/authors.config';
 
 /**
  * Authors Section Component
@@ -15,6 +17,7 @@ const AuthorsSection = () => {
   const [activeIndex, setActiveIndex] = useState(2);
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef(0);
+  const prefersReducedMotion = useReduceMotion();
 
   // Check if we should render
   const shouldRender = Boolean(authorsConfig.sectionTitle || authorsConfig.authors.length > 0);
@@ -23,8 +26,6 @@ const AuthorsSection = () => {
 
   useEffect(() => {
     if (!shouldRender) return;
-
-    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     if (prefersReducedMotion) {
       return;
@@ -38,9 +39,9 @@ const AuthorsSection = () => {
         {
           scale: 1,
           opacity: 1,
-          duration: 0.8,
-          stagger: 0.1,
-          ease: 'back.out(1.7)',
+          duration: DURATION.slow,
+          stagger: STAGGER.normal,
+          ease: EASING.backOut,
           scrollTrigger: {
             trigger: sectionRef.current,
             start: 'top 80%',
@@ -50,7 +51,7 @@ const AuthorsSection = () => {
     }, sectionRef);
 
     return () => ctx.revert();
-  }, [shouldRender]);
+  }, [shouldRender, prefersReducedMotion]);
 
   const handleDragStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     setIsDragging(true);

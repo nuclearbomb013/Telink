@@ -12,6 +12,7 @@ import { forumService } from '@/services/forum.service';
 import type { ForumPost, ForumStats } from '@/services/forum.types';
 
 import ForumPostCard from '@/components/Forum/ForumPostCard';
+import { PostListSkeleton } from '@/components/Forum/LoadingSkeleton';
 import { Button } from '@/components/ui/button';
 
 const ForumSection = () => {
@@ -59,18 +60,11 @@ const ForumSection = () => {
         </div>
 
         {loading ? (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[...Array(3)].map((_, i) => (
-              <div
-                key={i}
-                className="h-48 bg-brand-border/10 rounded-lg animate-pulse"
-              />
-            ))}
-          </div>
+          <PostListSkeleton count={3} />
         ) : hotPosts.length === 0 ? (
-          <div className="text-center py-12 bg-white/50 rounded-lg border border-brand-border/30">
+          <div className="text-center py-12 rounded-xl border border-dashed" style={{ background: 'rgba(242,240,232,0.5)', borderColor: '#CFCEC4' }}>
             <MessageSquare size={48} className="mx-auto mb-4 text-brand-light-gray" />
-            <p className="font-roboto text-brand-dark-gray/60 mb-4">
+            <p className="font-roboto text-brand-dark-gray/70 mb-4">
               论坛刚刚上线，快来发布第一个帖子吧
             </p>
             <Link to="/forum/create">
@@ -121,7 +115,7 @@ function StatItem({
       <div className="font-oswald text-2xl font-light text-brand-text">
         {value}
       </div>
-      <div className="font-roboto text-xs text-brand-dark-gray/60 mt-1">
+      <div className="font-roboto text-xs text-brand-dark-gray/70 mt-1">
         {label}
       </div>
     </div>

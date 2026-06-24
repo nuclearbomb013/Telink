@@ -9,6 +9,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, RefreshCw, Users, ChevronUp, Image, X, Send, AlertCircle, Loader2, CheckCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { formatDateTime } from '@/lib/dateUtils';
+import OptimizedImage from '@/components/OptimizedImage';
 import { uploadApi } from '@/lib/apiClient';
 
 import { useMoments } from '@/hooks/useMoments';
@@ -279,9 +281,11 @@ const CreateMomentModal = ({
                   className="relative aspect-square rounded-sm overflow-hidden border border-brand-border/30"
                 >
                   {/* 本地预览图片 */}
-                  <img
+                  <OptimizedImage
                     src={img.localPreview}
                     alt="预览"
+                    width={200}
+                    height={200}
                     className={cn(
                       "w-full h-full object-cover",
                       img.uploadStatus === 'error' && "opacity-50"
@@ -479,23 +483,6 @@ const CommentModal = ({
     setIsSubmitting(false);
   };
 
-  /**
-   * 格式化时间
-   * 直接使用 Date.now() 获取当前时间，确保时间显示准确
-   */
-  const formatTime = useCallback((timestamp: number) => {
-    const currentTime = Date.now();
-    const diff = currentTime - timestamp;
-    const minutes = Math.floor(diff / 60000);
-    const hours = Math.floor(diff / 3600000);
-    const days = Math.floor(diff / 86400000);
-
-    if (minutes < 1) return '刚刚';
-    if (minutes < 60) return `${minutes}分钟前`;
-    if (hours < 24) return `${hours}小时前`;
-    return `${days}天前`;
-  }, []);
-
   if (!isOpen) return null;
 
   return (
@@ -545,7 +532,7 @@ const CommentModal = ({
                       {comment.authorName}
                     </span>
                     <span className="text-xs text-brand-dark-gray/40">
-                      {formatTime(comment.createdAt)}
+                      {formatDateTime(comment.createdAt)}
                     </span>
                   </div>
                   <p className="mt-1 text-sm text-brand-dark-gray font-roboto">

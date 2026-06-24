@@ -2,7 +2,7 @@ import { useEffect, lazy, Suspense } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { ScrollTrigger } from '@/lib/gsap';
 
-import { siteConfig } from '@/config';
+import { siteConfig } from '@/config/site.config';
 import { useLenis } from '@/hooks/useLenis';
 import { useAnimationPreferences } from '@/hooks/useReduceMotion';
 import { SCROLL_CONFIG } from '@/constants/animation.constants';
@@ -32,6 +32,7 @@ const AuthLoginPage = lazy(() => import('@/pages/AuthLoginPage'));
 const AuthRegisterPage = lazy(() => import('@/pages/AuthRegisterPage'));
 const AuthForgotPassword = lazy(() => import('@/pages/AuthForgotPassword'));
 const NewsTimeline = lazy(() => import('@/pages/NewsTimelinePage'));
+const NewsDetailPage = lazy(() => import('@/pages/NewsDetailPage'));
 const DeveloperShowcaseSection = lazy(() => import('@/pages/DevelopersPage'));
 const MomentsPage = lazy(() => import('@/pages/MomentsPage'));
 const MessagesPage = lazy(() => import('@/pages/MessagesPage'));
@@ -39,6 +40,8 @@ const ChatPage = lazy(() => import('@/pages/ChatPage'));
 const NotFoundPage = lazy(() => import('@/pages/NotFoundPage'));
 const TermsPage = lazy(() => import('@/pages/TermsPage'));
 const PrivacyPage = lazy(() => import('@/pages/PrivacyPage'));
+const FavoritesPage = lazy(() => import('@/pages/FavoritesPage'));
+const HistoryPage = lazy(() => import('@/pages/HistoryPage'));
 
 /** Loading fallback for lazy routes */
 const PageLoader = () => (
@@ -146,7 +149,15 @@ function App() {
               <Route path="/" element={<HomePage />} />
               <Route path="/articles" element={<ArticlesListPage />} />
               <Route path="/articles/:slug" element={<ArticleDetailPage />} />
-              <Route path="/submit-article" element={<SubmitArticlePage />} />
+              {/* 论坛 - 受保护页面（需要登录） */}
+              <Route
+                path="/submit-article"
+                element={
+                  <ProtectedRoute>
+                    <SubmitArticlePage />
+                  </ProtectedRoute>
+                }
+              />
 
               {/* 论坛 - 公开页面 */}
               <Route path="/forum" element={<ForumListPage />} />
@@ -172,6 +183,7 @@ function App() {
 
               {/* 资讯时间线 */}
               <Route path="/news-timeline" element={<NewsTimeline />} />
+              <Route path="/news/:id" element={<NewsDetailPage />} />
 
               {/* 开发者展示 */}
               <Route path="/developers" element={<DeveloperShowcaseSection />} />
@@ -216,6 +228,17 @@ function App() {
               {/* 法律页面 */}
               <Route path="/terms" element={<TermsPage />} />
               <Route path="/privacy" element={<PrivacyPage />} />
+
+              {/* 收藏和历史 */}
+              <Route
+                path="/favorites"
+                element={
+                  <ProtectedRoute>
+                    <FavoritesPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="/history" element={<HistoryPage />} />
 
               {/* P0-2: 404 catch-all route */}
               <Route path="*" element={<NotFoundPage />} />

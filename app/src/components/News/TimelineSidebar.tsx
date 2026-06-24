@@ -5,6 +5,7 @@
  */
 
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { TrendingUp, Clock, Tag } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -28,6 +29,8 @@ const TimelineSidebar: React.FC<TimelineSidebarProps> = ({
   onCategoryToggle,
   className = ''
 }) => {
+  const navigate = useNavigate();
+
   // 格式化日期
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -50,6 +53,7 @@ const TimelineSidebar: React.FC<TimelineSidebarProps> = ({
           {hotNews.slice(0, 5).map((news, index) => (
             <div
               key={news.id}
+              onClick={() => navigate(`/news/${news.id}`)}
               className="p-3 bg-brand-linen/50 border border-brand-border/20 rounded hover:border-brand-text/30 transition-colors cursor-pointer"
             >
               <div className="flex items-start justify-between">
@@ -61,7 +65,7 @@ const TimelineSidebar: React.FC<TimelineSidebarProps> = ({
                     <span className="text-xs text-red-600 font-medium">
                       #{index + 1}
                     </span>
-                    <span className="text-xs text-brand-dark-gray/60">
+                    <span className="text-xs text-brand-dark-gray/70">
                       {formatDate(news.publishDate)}
                     </span>
                   </div>
@@ -70,7 +74,7 @@ const TimelineSidebar: React.FC<TimelineSidebarProps> = ({
                   <div className="text-xs font-medium text-red-600">
                     {news.hotScore}
                   </div>
-                  <div className="text-xs text-brand-dark-gray/50">热度</div>
+                  <div className="text-xs text-brand-dark-gray/70">热度</div>
                 </div>
               </div>
             </div>

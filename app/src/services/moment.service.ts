@@ -56,9 +56,9 @@ function transformMoment(raw: MomentData): Moment {
 function toApiCreateData(data: CreateMomentData) {
   return {
     content: data.content,
-    contentType: data.contentType,
+    content_type: data.contentType,
     visibility: data.visibility,
-    codeSnippet: data.codeSnippet ? {
+    code_snippet: data.codeSnippet ? {
       filename: data.codeSnippet.filename || '',
       language: data.codeSnippet.language,
       code: data.codeSnippet.code,
@@ -194,10 +194,18 @@ class MomentService {
    */
   async updateMoment(data: UpdateMomentData): Promise<MomentServiceResponse<Moment>> {
     try {
-      const response = await momentApi.updateMoment(data.id, {
-        content: data.content,
-        visibility: data.visibility,
-      });
+      const updateBody: Record<string, unknown> = {};
+      if (data.content !== undefined) updateBody.content = data.content;
+      if (data.contentType !== undefined) updateBody.content_type = data.contentType;
+      if (data.visibility !== undefined) updateBody.visibility = data.visibility;
+      if (data.codeSnippet !== undefined) updateBody.code_snippet = {
+        filename: data.codeSnippet.filename || '',
+        language: data.codeSnippet.language,
+        code: data.codeSnippet.code,
+      };
+      if (data.images !== undefined) updateBody.images = data.images.map(img => ({ url: img.url, alt: img.caption || '' }));
+      if (data.location !== undefined) updateBody.location = data.location;
+      const response = await momentApi.updateMoment(data.id, updateBody);
 
       if (!response.success || !response.data) {
         return {

@@ -37,46 +37,42 @@ export default defineConfig(({ mode }) => {
         output: {
           // P2-9: Chunk splitting strategy - separate vendor from app code
           manualChunks(id) {
-            // Core vendor (React ecosystem)
-            if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) {
-              return 'vendor-react';
-            }
-            // Animation libraries
             if (id.includes('node_modules/gsap') || id.includes('node_modules/lenis')) {
               return 'vendor-animations';
             }
-            // UI libraries
             if (id.includes('node_modules/lucide-react') || id.includes('node_modules/@radix-ui')) {
               return 'vendor-ui';
             }
-            // Markdown/editor (eagerly loaded: marked, dompurify, highlight.js)
-            // mammoth is dynamically imported in documentParser, let Rollup split it
             if (id.includes('node_modules/marked') || id.includes('node_modules/dompurify') ||
                 id.includes('node_modules/highlight.js')) {
               return 'vendor-markdown';
             }
-            // mammoth is heavy (1MB+) and only used via dynamic import in SubmitArticlePage
             if (id.includes('node_modules/mammoth')) {
-              return;  // Let Rollup naturally split with the lazy chunk
+              return;
             }
-            // Everything else in node_modules
             if (id.includes('node_modules')) {
               return 'vendor-other';
             }
           },
-          // Asset naming for better caching
-          entryFileNames: 'assets/[name]-[hash].js',
-          chunkFileNames: 'assets/[name]-[hash].js',
+          entryFileNames: (chunkInfo) => {
+            const name = chunkInfo.name.replace(/^.*[\\/]/, '');
+            return `assets/${name}-[hash].js`;
+          },
+          chunkFileNames: (chunkInfo) => {
+            const name = chunkInfo.name.replace(/^.*[\\/]/, '');
+            return `assets/${name}-[hash].js`;
+          },
           assetFileNames: (assetInfo) => {
-            const info = assetInfo.name?.split('.') ?? [];
-            const ext = info.length > 0 ? info[info.length - 1] : '';
-            if (ext && /\.(png|jpe?g|gif|svg|webp|ico)$/i.test(ext)) {
-              return 'assets/images/[name]-[hash][extname]';
+            const originalName = assetInfo.originalFileName || assetInfo.name || '';
+            const name = originalName.split('/').pop() || originalName;
+            const ext = name.split('.').pop() || '';
+            if (/\.(png|jpe?g|gif|svg|webp|ico)$/i.test(ext)) {
+              return `assets/images/${name.replace(/\.[^.]+$/, '')}-[hash].${ext}`;
             }
             if (ext === 'css') {
-              return 'assets/css/[name]-[hash][extname]';
+              return `assets/css/[name]-[hash][extname]`;
             }
-            return 'assets/[name]-[hash][extname]';
+            return `assets/[name]-[hash][extname]`;
           },
         },
       },
@@ -111,6 +107,11 @@ export default defineConfig(({ mode }) => {
       // 反向代理配置 - 解决 CORS 问题
       proxy: {
         '/api': {
+          target: 'http://127.0.0.1:8000',
+          changeOrigin: true,
+          secure: false,
+        },
+        '/uploads': {
           target: 'http://127.0.0.1:8000',
           changeOrigin: true,
           secure: false,

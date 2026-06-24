@@ -197,7 +197,10 @@ async def _do_upload_image(file: UploadFile, user: User) -> ServiceResponse[Uplo
 
     # Step 4: Magic bytes validation (prevent extension spoofing)
     if not _validate_magic_bytes(contents):
-        logger.warning(f"Upload rejected: invalid magic bytes by user {user.id}, claimed ext={ext}")
+        logger.warning(
+            f"Upload rejected: invalid magic bytes by user {user.id}, claimed ext={ext}, "
+            f"first_bytes={contents[:16].hex()}"
+        )
         return ServiceResponse(
             success=False,
             error={

@@ -17,6 +17,7 @@ import type {
 
 import { DEFAULT_CURRENT_USER } from './user.types';
 import type { DeveloperProfile, GetDevelopersParams, DevelopersResponse } from './developer.types';
+import { userApi } from '@/lib/apiClient';
 
 import type { ForumPost } from './forum.types';
 import { forumService } from './forum.service';
@@ -571,28 +572,49 @@ class UserService {
   }
 
   /**
-   * 根据条件获取开发者
+   * 根据条件获取开发者（调用真实后端 API）
    */
   async getDevelopers(params: GetDevelopersParams = {}): Promise<DevelopersResponse> {
-    await this.simulateDelay();
+    // 从真实后端 API 获取用户列表
+    const response = await userApi.list({
+      page: 1,
+      limit: 100, // Max allowed by backend
+    });
 
-    let developers = [...this.users].map(user => {
-      // Convert User to DeveloperProfile
+    if (!response.success || !response.data) {
+      return { developers: [], totalCount: 0, hasMore: false };
+    }
+
+    // Map backend users to internal User type
+    const users: User[] = response.data.users.map(u => ({
+      id: u.id,
+      username: u.username,
+      avatar: u.avatar,
+      bio: u.bio,
+      role: u.role as User['role'],
+      postCount: u.postCount,
+      commentCount: u.commentCount,
+      likeCount: u.likeCount,
+      joinedAt: u.joinedAt,
+    }));
+
+    // Convert User to DeveloperProfile
+    let developers = users.map(user => {
       const developer: DeveloperProfile = {
         ...user,
-        displayName: user.username, // Use username as display name
-        expertise: this.getDefaultExpertise(user.username), // Generate expertise based on username
+        displayName: user.username,
+        expertise: this.getDefaultExpertise(user.username),
         githubUrl: this.getDefaultSocialUrl(user.username, 'github'),
         portfolioUrl: this.getDefaultSocialUrl(user.username, 'portfolio'),
         stats: {
-          projectsCount: user.postCount, // Using postCount as proxy for projects
-          contributions: user.commentCount, // Using commentCount as proxy for contributions
+          projectsCount: user.postCount,
+          contributions: user.commentCount,
         },
         contributionLevel: this.getContributionLevel(user.likeCount),
         joinDate: new Date(user.joinedAt),
         lastActivity: user.lastActiveAt ? new Date(user.lastActiveAt) : new Date(user.joinedAt),
-        reputationScore: user.likeCount, // Using likes as reputation proxy
-        featured: user.role === 'admin' || user.role === 'moderator', // Admins/moderators are featured
+        reputationScore: user.likeCount,
+        featured: user.role === 'admin' || user.role === 'moderator',
         skills: this.getDefaultSkills(user.username),
         socialLinks: {
           twitter: this.getDefaultSocialUrl(user.username, 'twitter'),
@@ -729,11 +751,14 @@ class UserService {
   }
 
   /**
-   * 获取开发者分类
+   * 获取开发者分类（从真实 API 获取）
    */
   async getDeveloperCategories(): Promise<string[]> {
-    // Return unique expertise areas from all developers
-    const allExpertise = this.users.flatMap(user => this.getDefaultExpertise(user.username));
+    const response = await userApi.list({ limit: 100 });
+    if (!response.success || !response.data) {
+      return [];
+    }
+    const allExpertise = response.data.users.flatMap(u => this.getDefaultExpertise(u.username));
     return [...new Set(allExpertise)];
   }
 

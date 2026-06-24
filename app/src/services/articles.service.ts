@@ -10,7 +10,7 @@
 
 import Fuse from 'fuse.js';
 import type { IFuseOptions } from 'fuse.js';
-import { latestArticlesConfig, type ArticleItem } from '@/config';
+import { latestArticlesConfig, type ArticleItem } from '@/config/articles.config';
 import type {
   Article,
   CreateArticleData,

@@ -1,181 +1,155 @@
-/**
- * Markdown 渲染组件
- * 支持语法高亮和优雅的排版
- * 使用 DOMPurify 进行 XSS 防护 (P0-3)
- */
+import { useEffect, useRef, useMemo, useCallback } from 'react';
+import { cn } from '@/lib/utils';
+import { compileMarkdown } from '@/lib/markdownCompiler';
+import type { MarkdownDocument } from '@/services/reader.types';
+import { useOptionalReaderPreferencesContext } from '@/hooks/ReaderPreferencesContext';
 
-import { useEffect, useRef, useMemo } from 'react';
-import { marked } from 'marked';
-import hljs from 'highlight.js';
-import DOMPurify from 'dompurify';
-import 'highlight.js/styles/atom-one-dark.css';
-
-interface MarkdownRendererProps {
-  content: string;
+export interface MarkdownRendererProps {
+  content?: string;
+  document?: MarkdownDocument;
+  mode?: 'preview' | 'reader';
   className?: string;
+  onImageClick?: (src: string, alt: string, caption?: string) => void;
 }
 
-/**
- * DOMPurify configuration: allow only safe tags and attributes
- * for rendered Markdown content.
- */
-const DOMPURIFY_CONFIG = {
-  ALLOWED_TAGS: [
-    'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-    'p', 'br', 'hr',
-    'ul', 'ol', 'li',
-    'blockquote', 'pre', 'code',
-    'table', 'thead', 'tbody', 'tr', 'th', 'td',
-    'em', 'strong', 'del', 'ins', 'sub', 'sup',
-    'a', 'img', 'span', 'div',
-    'input', 'label', 'details', 'summary',
-  ],
-  ALLOWED_ATTR: [
-    'href', 'title', 'target', 'rel',
-    'src', 'alt', 'width', 'height', 'loading',
-    'class', 'id', 'style',
-    'type', 'checked', 'disabled',
-  ],
-  ALLOWED_DATA_ATTR: ['code'],
-  ALLOWED_URI_REGEXP: /^(?:(?:https?|ftp|mailto):|[^a-z]|[a-z+.-]+(?:[^a-z+.-:]|$))/i,
-  FORBID_TAGS: ['svg', 'math', 'style'],
-  FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur'],
-  USE_PROFILES: { html: true },
+const EMPTY_DOCUMENT: MarkdownDocument = {
+  html: '<p class="text-reader-secondary">暂无内容</p>',
+  toc: [],
+  readingTime: 0,
+  summary: { lead: '', keyPoints: [], sectionTitles: [] },
 };
 
-/**
- * Escape HTML to prevent XSS (fallback)
- */
-function escapeHtml(unsafe: string): string {
-  return unsafe
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-/**
- * Sanitize HTML using DOMPurify for robust XSS protection.
- * Replaces the previous regex-based approach which was vulnerable
- * to case variants, entity encoding, SVG/MathML, and exotic attributes.
- */
-function sanitizeHtml(html: string): string {
-  try {
-    // DOMPurify v3 may return TrustedHTML; cast to string for compatibility
-    const result = DOMPurify.sanitize(html, DOMPURIFY_CONFIG);
-    return typeof result === 'string' ? result : String(result);
-  } catch (e) {
-    console.error('DOMPurify sanitization failed, using escape fallback:', e);
-    // Fallback: escape all HTML if sanitization fails
-    return escapeHtml(html);
-  }
-}
-
-/**
- * 渲染 Markdown 内容
- */
-function renderMarkdown(content: unknown): string {
-  // 确保 content 是字符串
-  if (typeof content !== 'string') {
-    console.error('renderMarkdown received non-string content:', typeof content, content);
-    // 如果是对象但有有用的信息，尝试转换为字符串
-    if (content === null || content === undefined) {
-      return '<p class="text-brand-dark-gray/50">内容为空</p>';
-    }
-    // 如果是数组，将其连接成字符串
-    if (Array.isArray(content)) {
-      return `<p class="text-red-500">错误：期望字符串内容，但收到了数组</p>`;
-    }
-    // 对于其他类型，尝试使用 JSON.stringify
-    try {
-      const stringContent = JSON.stringify(content);
-      return `<p class="text-red-500">内容格式错误，显示原始内容：</p><pre class="whitespace-pre-wrap font-mono text-sm">${escapeHtml(stringContent)}</pre>`;
-    } catch {
-      return '<p class="text-red-500">内容格式严重错误，无法渲染</p>';
-    }
-  }
-
-  if (!content.trim()) {
-    return '<p class="text-brand-dark-gray/50">暂无内容</p>';
-  }
-
-  try {
-    // 配置 marked 用于语法高亮
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (marked as any).setOptions({
-      breaks: true,
-      gfm: true,
-      highlight: function(code: string, lang?: string) {
-        const language = lang || 'text';
-        try {
-          const validLanguage = hljs.getLanguage(language) ? language : 'text';
-          return hljs.highlight(code, { language: validLanguage }).value;
-        } catch {
-          return hljs.highlightAuto(code).value;
-        }
-      }
-    });
-
-    // 使用marked解析Markdown
-    const result = marked.parse(content);
-    // P0-3: Use DOMPurify for robust XSS protection
-    return sanitizeHtml(result as string);
-  } catch (error) {
-    console.error('Markdown render error:', error);
-    return `<p class="text-red-500">渲染失败：${error instanceof Error ? escapeHtml(error.message) : '未知错误'}</p><pre class="whitespace-pre-wrap font-mono text-sm">${escapeHtml(String(content))}</pre>`;
-  }
-}
-
-const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className = '' }) => {
+export default function MarkdownRenderer({
+  content,
+  document: precompiled,
+  mode = 'preview',
+  className = '',
+  onImageClick,
+}: MarkdownRendererProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const isReader = mode === 'reader';
+  const readerPreferences = useOptionalReaderPreferencesContext();
 
-  // 渲染 Markdown 内容 - 使用 useMemo 避免在 effect 中调用 setState
-  const renderedHtml = useMemo(() => {
+  const renderedDocument = useMemo(() => {
+    if (precompiled) return precompiled;
+    if (content != null) return compileMarkdown(content);
+    return EMPTY_DOCUMENT;
+  }, [content, precompiled]);
+
+  const handleCopy = useCallback(async (target: HTMLElement) => {
+    const wrapper = target.closest('.code-block-wrapper');
+    const codeEl = wrapper?.querySelector('code.hljs') as HTMLElement | null;
+    const code = codeEl?.textContent || '';
+    if (!code) return;
+
+    const markCopied = () => {
+      target.textContent = 'Copied';
+      target.classList.add('copied');
+      setTimeout(() => {
+        target.textContent = 'Copy';
+        target.classList.remove('copied');
+      }, 2000);
+    };
+
     try {
-      return renderMarkdown(content);
-    } catch (err) {
-      console.error('Render error:', err);
-      return `<pre class="whitespace-pre-wrap font-mono text-sm">${escapeHtml(content)}</pre>`;
+      await navigator.clipboard.writeText(code);
+      markCopied();
+    } catch {
+      const textarea = document.createElement('textarea');
+      textarea.value = code;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      markCopied();
     }
-  }, [content]);
+  }, []);
 
-  // 处理复制代码功能
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !isReader || !readerPreferences) return;
+
+    const isWrapping = readerPreferences.preferences.codeWrap;
+    for (const pre of container.querySelectorAll('pre')) {
+      (pre as HTMLElement).style.whiteSpace = isWrapping ? 'pre-wrap' : 'pre';
+    }
+    for (const btn of container.querySelectorAll('.code-wrap-btn')) {
+      btn.classList.toggle('code-wrap-btn--active', isWrapping);
+      btn.setAttribute('aria-pressed', String(isWrapping));
+      btn.textContent = isWrapping ? 'No wrap' : 'Wrap';
+    }
+  }, [isReader, readerPreferences, readerPreferences?.preferences.codeWrap, renderedDocument.html]);
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    const handleCopyClick = async (e: Event) => {
-      const target = e.target as HTMLElement;
-      if (!target.classList.contains('copy-code-btn')) return;
+    const handleClick = (event: Event) => {
+      const target = event.target as HTMLElement;
 
-      const code = decodeURIComponent(target.dataset.code || '');
+      if (target.classList.contains('copy-code-btn')) {
+        event.preventDefault();
+        handleCopy(target);
+        return;
+      }
 
-      try {
-        await navigator.clipboard.writeText(code);
-        target.textContent = '已复制!';
-        target.classList.add('copied');
+      if (target.classList.contains('code-wrap-btn')) {
+        event.preventDefault();
 
-        setTimeout(() => {
-          target.textContent = '复制';
-          target.classList.remove('copied');
-        }, 2000);
-      } catch (err) {
-        console.error('复制失败:', err);
+        if (isReader && readerPreferences) {
+          readerPreferences.updatePreference('codeWrap', !readerPreferences.preferences.codeWrap);
+          return;
+        }
+
+        const wrapper = target.closest('.code-block-wrapper');
+        const pre = wrapper?.querySelector('pre') as HTMLElement | null;
+        if (!pre) return;
+
+        const isWrapping = pre.style.whiteSpace === 'pre-wrap';
+        pre.style.whiteSpace = isWrapping ? 'pre' : 'pre-wrap';
+        target.classList.toggle('code-wrap-btn--active', !isWrapping);
+        target.setAttribute('aria-pressed', String(!isWrapping));
+        target.textContent = isWrapping ? 'Wrap' : 'No wrap';
+        return;
+      }
+
+      if (isReader && onImageClick) {
+        const img = target.closest('img[data-viewer]') as HTMLImageElement | null;
+        if (img) {
+          const caption = img.dataset.caption || img.alt || '';
+          onImageClick(img.src, img.alt, caption);
+        }
       }
     };
 
-    container.addEventListener('click', handleCopyClick);
-    return () => container.removeEventListener('click', handleCopyClick);
-  }, [renderedHtml]);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!isReader || !onImageClick || (event.key !== 'Enter' && event.key !== ' ')) {
+        return;
+      }
+
+      const img = (event.target as HTMLElement).closest('img[data-viewer]') as HTMLImageElement | null;
+      if (!img) return;
+
+      event.preventDefault();
+      const caption = img.dataset.caption || img.alt || '';
+      onImageClick(img.src, img.alt, caption);
+    };
+
+    container.addEventListener('click', handleClick);
+    container.addEventListener('keydown', handleKeyDown);
+    return () => {
+      container.removeEventListener('click', handleClick);
+      container.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isReader, onImageClick, handleCopy, readerPreferences]);
 
   return (
     <div
       ref={containerRef}
-      className={`markdown-content ${className}`}
-      dangerouslySetInnerHTML={{ __html: renderedHtml }}
+      className={cn('markdown-content', isReader && 'reader-markdown', className)}
+      dangerouslySetInnerHTML={{ __html: renderedDocument.html }}
     />
   );
-};
-
-export default MarkdownRenderer;
+}

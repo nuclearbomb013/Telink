@@ -5,9 +5,8 @@ Similar to a social feed / WeChat Moments.
 Supports text, images, code snippets, and mixed content types.
 """
 
-from sqlalchemy import Column, String, Text, Integer, Boolean, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, String, Text, Integer, Boolean, ForeignKey, UniqueConstraint, JSON
 from sqlalchemy.orm import relationship
-from sqlalchemy.dialects.postgresql import JSON
 
 from app.models.base import BaseModel
 

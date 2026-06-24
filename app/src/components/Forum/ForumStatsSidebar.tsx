@@ -8,6 +8,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { FileText, MessageSquare, Users, TrendingUp, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { formatRelativeTime } from '@/lib/dateUtils';
 
 import { forumService } from '@/services/forum.service';
 import { userService } from '@/services/user.service';
@@ -238,28 +239,5 @@ const ForumStatsSidebar = () => {
     </div>
   );
 };
-
-/**
- * 格式化相对时间
- */
-function formatRelativeTime(timestamp: number): string {
-  const now = Date.now();
-  const diff = now - timestamp;
-
-  const minute = 60 * 1000;
-  const hour = 60 * minute;
-  const day = 24 * hour;
-  const week = 7 * day;
-
-  if (diff < minute) return '刚刚';
-  if (diff < hour) return `${Math.floor(diff / minute)} 分钟前`;
-  if (diff < day) return `${Math.floor(diff / hour)} 小时前`;
-  if (diff < week) return `${Math.floor(diff / day)} 天前`;
-
-  return new Date(timestamp).toLocaleDateString('zh-CN', {
-    month: 'short',
-    day: 'numeric',
-  });
-}
 
 export default ForumStatsSidebar;

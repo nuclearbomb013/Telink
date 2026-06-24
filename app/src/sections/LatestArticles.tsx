@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { gsap } from 'gsap';
+import { gsap } from '@/lib/gsap';
 import { Link } from 'react-router-dom';
-import { latestArticlesConfig } from '@/config';
+import { latestArticlesConfig } from '@/config/articles.config';
 
 import { useReduceMotion } from '@/hooks/useReduceMotion';
 import { EASING, DURATION, STAGGER } from '@/constants/animation.constants';
@@ -21,7 +21,8 @@ const LatestArticles = () => {
   const leftButtonRef = useRef<HTMLButtonElement>(null);
   const rightButtonRef = useRef<HTMLButtonElement>(null);
 
-  // Config values
+  // Track animation timeline for cleanup
+  const animTlRef = useRef<gsap.core.Timeline | null>(null);
   const articles = latestArticlesConfig.articles;
   const totalCards = articles.length;
 
@@ -110,7 +111,8 @@ const LatestArticles = () => {
     // Subtle card scale animation during transition
     if (cardsWrapperRef.current) {
       const cards = cardsWrapperRef.current.children;
-      const tl = gsap.timeline(); // 使用 timeline 来组织动画
+      const tl = gsap.timeline();
+      animTlRef.current = tl;
       tl.fromTo(
         cards,
         { scale: 0.97 },
@@ -119,6 +121,9 @@ const LatestArticles = () => {
           duration: DURATION.normal,
           ease: EASING.smooth,
           stagger: STAGGER.fast,
+          onComplete: () => {
+            animTlRef.current = null;
+          },
         }
       );
     }
@@ -185,6 +190,13 @@ const LatestArticles = () => {
 
     return () => ctx.revert();
   }, [prefersReducedMotion, shouldRender]);
+
+  // Cleanup navigation animation on unmount
+  useEffect(() => {
+    return () => {
+      animTlRef.current?.kill();
+    };
+  }, []);
 
   const handleCardHover = (index: number | null) => {
     setHoveredIndex(index);

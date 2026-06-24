@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { gsap } from 'gsap';
+import { gsap } from '@/lib/gsap';
+import { useReduceMotion } from '@/hooks/useReduceMotion';
+import { EASING, DURATION, STAGGER } from '@/constants/animation.constants';
 import { ArrowRight } from 'lucide-react';
 
-import { greenTribeConfig } from '@/config';
+import { greenTribeConfig } from '@/config/developers.config';
 
 /**
  * Green Tribe Section Component
@@ -17,14 +19,13 @@ const GreenTribe = () => {
   const [email, setEmail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState('');
+  const prefersReducedMotion = useReduceMotion();
 
   // Check if we should render
   const shouldRender = Boolean(greenTribeConfig.sectionTitle || greenTribeConfig.members.length > 0);
 
   useEffect(() => {
     if (!shouldRender) return;
-
-    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     if (prefersReducedMotion) {
       return;
@@ -58,13 +59,13 @@ const GreenTribe = () => {
             {
               y: 0,
               opacity: 1,
-              duration: 0.8,
-              ease: 'power3.out',
+              duration: DURATION.slow,
+              ease: EASING.power3Out,
               scrollTrigger: {
                 trigger: card,
                 start: 'top 90%',
               },
-              delay: index * 0.1,
+              delay: index * STAGGER.normal,
             }
           );
         });
@@ -72,7 +73,7 @@ const GreenTribe = () => {
     }, sectionRef);
 
     return () => ctx.revert();
-  }, [shouldRender]);
+  }, [shouldRender, prefersReducedMotion]);
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();

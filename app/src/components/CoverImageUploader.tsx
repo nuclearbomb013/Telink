@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { Upload, X, Image as ImageIcon, AlertCircle } from 'lucide-react';
 import { uploadApi } from '@/lib/apiClient';
+import OptimizedImage from '@/components/OptimizedImage';
 
 /**
  * Cover Image Uploader Component
@@ -241,9 +242,11 @@ const CoverImageUploader: React.FC<CoverImageUploaderProps> = ({
             className="relative overflow-hidden rounded-lg border border-brand-border bg-brand-linen/30"
             style={{ aspectRatio: '16/9' }}
           >
-            <img
+            <OptimizedImage
               src={value}
               alt="封面预览"
+              width={640}
+              height={360}
               className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
               loading="eager"
             />

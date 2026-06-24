@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { gsap } from 'gsap';
+import { gsap } from '@/lib/gsap';
+import { useReduceMotion } from '@/hooks/useReduceMotion';
+import { EASING, DURATION, STAGGER } from '@/constants/animation.constants';
 import { Instagram, ExternalLink } from 'lucide-react';
-import { instagramGalleryConfig } from '@/config';
+import { instagramGalleryConfig } from '@/config/gallery.config';
 
 /**
  * Instagram Gallery Section Component
@@ -14,14 +16,13 @@ const InstagramGallery = () => {
   const titleRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const [hoveredItem, setHoveredItem] = useState<number | null>(null);
+  const prefersReducedMotion = useReduceMotion();
 
   // Check if we should render
   const shouldRender = Boolean(instagramGalleryConfig.handle || instagramGalleryConfig.images.length > 0);
 
   useEffect(() => {
     if (!shouldRender) return;
-
-    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     if (prefersReducedMotion) {
       return;
@@ -35,8 +36,8 @@ const InstagramGallery = () => {
         {
           y: 0,
           opacity: 1,
-          duration: 0.8,
-          ease: 'power3.out',
+          duration: DURATION.slow,
+          ease: EASING.power3Out,
           scrollTrigger: {
             trigger: titleRef.current,
             start: 'top 85%',
@@ -57,13 +58,13 @@ const InstagramGallery = () => {
             {
               scale: 1,
               opacity: 1,
-              duration: 0.6,
-              ease: 'power3.out',
+              duration: DURATION.medium,
+              ease: EASING.power3Out,
               scrollTrigger: {
                 trigger: gridRef.current,
                 start: 'top 80%',
               },
-              delay: index * 0.06,
+              delay: index * STAGGER.fast,
             }
           );
         });
@@ -71,7 +72,7 @@ const InstagramGallery = () => {
     }, sectionRef);
 
     return () => ctx.revert();
-  }, [shouldRender]);
+  }, [shouldRender, prefersReducedMotion]);
 
   // Move conditional render to return statement
   if (!shouldRender) {
@@ -171,19 +172,6 @@ const InstagramGallery = () => {
           </a>
         </div>
       </div>
-
-      <style>{`
-        @keyframes streak {
-          0% {
-            transform: translateX(-100%) skewX(-15deg);
-            opacity: 1;
-          }
-          100% {
-            transform: translateX(200%) skewX(-15deg);
-            opacity: 0;
-          }
-        }
-      `}</style>
     </section>
   );
 };

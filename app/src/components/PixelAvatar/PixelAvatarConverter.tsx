@@ -8,6 +8,7 @@ import { useState, useCallback, useRef } from 'react';
 import { Upload, ArrowRight, Loader2 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
+import OptimizedImage from '@/components/OptimizedImage';
 import {
   convertImageToPixelGrid,
   pixelGridToPreviewDataURL,
@@ -46,19 +47,28 @@ const PixelAvatarConverter: React.FC<PixelAvatarConverterProps> = ({
   const [contrast, setContrast] = useState(DEFAULT_CONTRAST);
   const [pixelGrid, setPixelGrid] = useState<PixelGrid | null>(null);
   const [isConverting, setIsConverting] = useState(false);
+  const [conversionError, setConversionError] = useState<string | null>(null);
 
   const currentFileRef = useRef<File | null>(null);
 
   // 转换图片
   const convertImage = useCallback(async (file: File, ctr: number) => {
     setIsConverting(true);
+    setConversionError(null);
     try {
       const grid = await convertImageToPixelGrid(file, DEFAULT_GRID_SIZE, ctr);
+      if (!grid || grid.length === 0) {
+        throw new Error('Pixel grid generation returned empty result');
+      }
       setPixelGrid(grid);
       const previewURL = pixelGridToPreviewDataURL(grid, PREVIEW_SIZE);
       setPixelPreview(previewURL);
     } catch (error) {
-      console.error('Failed to convert image:', error);
+      const msg = error instanceof Error ? error.message : '图片转换失败';
+      console.error('Failed to convert image:', msg);
+      setConversionError(msg);
+      setPixelGrid(null);
+      setPixelPreview(null);
     } finally {
       setIsConverting(false);
     }
@@ -69,6 +79,7 @@ const PixelAvatarConverter: React.FC<PixelAvatarConverterProps> = ({
     setOriginalImage(null);
     setPixelPreview(null);
     setPixelGrid(null);
+    setConversionError(null);
     currentFileRef.current = null;
     setContrast(DEFAULT_CONTRAST);
     onOpenChange(false);
@@ -115,11 +126,23 @@ const PixelAvatarConverter: React.FC<PixelAvatarConverterProps> = ({
 
   // 确认使用
   const handleConfirm = useCallback(() => {
-    if (!pixelGrid) return;
-    const previewURL = pixelGridToPreviewDataURL(pixelGrid, DEFAULT_GRID_SIZE);
-    const file = dataURLtoFile(previewURL, 'pixel-avatar.png');
-    onConfirm(file);
-    handleClose();
+    if (!pixelGrid) {
+      setConversionError('请先上传图片并等待转换完成');
+      return;
+    }
+    try {
+      const previewURL = pixelGridToPreviewDataURL(pixelGrid, DEFAULT_GRID_SIZE);
+      const file = dataURLtoFile(previewURL, 'pixel-avatar.png');
+      if (!file || file.size === 0) {
+        throw new Error('Generated file is empty');
+      }
+      onConfirm(file);
+      handleClose();
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : '生成头像文件失败';
+      console.error('Pixel avatar confirm error:', msg);
+      setConversionError(msg);
+    }
   }, [pixelGrid, onConfirm, handleClose]);
 
   return (
@@ -142,9 +165,11 @@ const PixelAvatarConverter: React.FC<PixelAvatarConverterProps> = ({
               )}
             >
               {originalImage ? (
-                <img
+                <OptimizedImage
                   src={originalImage}
                   alt="原图预览"
+                  width={112}
+                  height={112}
                   className="w-full h-full object-contain rounded-lg"
                 />
               ) : (
@@ -170,9 +195,11 @@ const PixelAvatarConverter: React.FC<PixelAvatarConverterProps> = ({
               {/* 原图 */}
               <div className="flex flex-col items-center">
                 <div className="w-28 h-28 rounded-lg overflow-hidden border border-brand-border/30 bg-brand-linen/50">
-                  <img
+                  <OptimizedImage
                     src={originalImage}
                     alt="原图"
+                    width={112}
+                    height={112}
                     className="w-full h-full object-cover"
                   />
                 </div>
@@ -188,10 +215,13 @@ const PixelAvatarConverter: React.FC<PixelAvatarConverterProps> = ({
                   {isConverting ? (
                     <Loader2 size={24} className="animate-spin text-brand-dark-gray/40" />
                   ) : (
-                    <img
+                    <OptimizedImage
                       src={pixelPreview}
                       alt="像素头像"
+                      width={112}
+                      height={112}
                       className="w-full h-full object-contain"
+                      loading="eager"
                       style={{ imageRendering: 'pixelated' }}
                     />
                   )}
@@ -229,6 +259,12 @@ const PixelAvatarConverter: React.FC<PixelAvatarConverterProps> = ({
             </div>
           )}
         </div>
+
+        {conversionError ? (
+          <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-sm px-3 py-2" role="alert">
+            {conversionError}
+          </div>
+        ) : null}
 
         <DialogFooter>
           <Button variant="outline" onClick={handleClose}>

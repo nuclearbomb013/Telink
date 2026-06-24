@@ -7,6 +7,7 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Calendar, MessageSquare, FileText, Heart, Award, Edit, Camera } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
+import { formatDate, formatRelativeTime } from '@/lib/dateUtils';
 import { userApi, forumApi, type UserPublic } from '@/lib/apiClient';
 import { userService } from '@/services/user.service';
 
@@ -24,30 +25,6 @@ interface ProfilePost {
   views: number;
   replyCount: number;
   createdAt: number;
-}
-
-function formatDate(timestamp: number): string {
-  return new Date(timestamp).toLocaleDateString('zh-CN', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
-}
-
-function formatRelativeTime(timestamp: number): string {
-  const now = Date.now();
-  const diff = now - timestamp;
-
-  const day = 24 * 60 * 60 * 1000;
-  const week = 7 * day;
-  const month = 30 * day;
-  const year = 365 * day;
-
-  if (diff < day) return '今天';
-  if (diff < week) return `${Math.floor(diff / day)} 天前`;
-  if (diff < month) return `${Math.floor(diff / week)} 周前`;
-  if (diff < year) return `${Math.floor(diff / month)} 个月前`;
-  return `${Math.floor(diff / year)} 年前`;
 }
 
 function StatCard({

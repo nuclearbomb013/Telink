@@ -125,6 +125,12 @@ export const EASING = {
   power4Out: 'power4.out',
   /** Power2 easing - moderate finish */
   power2Out: 'power2.out',
+  /** Back easing - overshoot and settle */
+  backOut: 'back.out(1.7)',
+  /** Power3 ease-in-out */
+  power3InOut: 'power3.inOut',
+  /** Elastic easing - bouncy finish */
+  elasticOut: 'elastic.out(1, 0.5)',
 } as const;
 
 /**
@@ -141,6 +147,8 @@ export const DURATION = {
   slow: 0.8,
   /** Very slow transition */
   verySlow: 1.2,
+  /** Extra slow transition (reveal effects) */
+  slowest: 1.4,
 } as const;
 
 /**

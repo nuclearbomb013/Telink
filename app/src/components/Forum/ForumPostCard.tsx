@@ -7,6 +7,7 @@
 import { Link } from 'react-router-dom';
 import { MessageSquare, Eye, Pin, Lock } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { formatDateTime } from '@/lib/dateUtils';
 
 import type { ForumPost } from '@/services/forum.types';
 import {
@@ -27,32 +28,6 @@ export interface ForumPostCardProps {
 }
 
 /**
- * 格式化时间
- */
-function formatTime(timestamp: number): string {
-  const now = Date.now();
-  const diff = now - timestamp;
-
-  const minute = 60 * 1000;
-  const hour = 60 * minute;
-  const day = 24 * hour;
-  const week = 7 * day;
-  const month = 30 * day;
-
-  if (diff < minute) return '刚刚';
-  if (diff < hour) return `${Math.floor(diff / minute)} 分钟前`;
-  if (diff < day) return `${Math.floor(diff / hour)} 小时前`;
-  if (diff < week) return `${Math.floor(diff / day)} 天前`;
-  if (diff < month) return `${Math.floor(diff / week)} 周前`;
-
-  return new Date(timestamp).toLocaleDateString('zh-CN', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
-}
-
-/**
  * ForumPostCard 组件
  */
 const ForumPostCard = ({
@@ -67,9 +42,10 @@ const ForumPostCard = ({
   return (
     <article
       className={cn(
-        'group relative bg-white/90 backdrop-blur-sm border border-brand-border/30 rounded-lg p-4',
-        'transition-all duration-300 hover:shadow-lg hover:border-brand-text/20',
-        'hover:-translate-y-0.5',
+        'group relative rounded-xl border transition-all duration-200',
+        'bg-[var(--card-bg,#F2F0E8)] border-[var(--reader-line,#CFCEC4)]',
+        'shadow-[0_4px_18px_rgb(36_39_34_/_0.06)] p-4',
+        'hover:-translate-y-0.5 hover:border-[rgba(49,91,72,0.3)]',
         className
       )}
     >
@@ -109,10 +85,11 @@ const ForumPostCard = ({
               {/* 分类标签 */}
               <span
                 className={cn(
-                  'shrink-0 inline-flex items-center gap-1 px-2 py-0.5 text-xs font-roboto rounded',
-                  'bg-brand-linen/50 text-brand-dark-gray border border-brand-border/30',
-                  'group-hover:border-brand-text/30 transition-colors'
+                  'shrink-0 inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-md',
+                  'bg-[rgba(242,240,232,0.5)] border border-[var(--reader-line,#CFCEC4)]',
+                  'group-hover:border-[rgba(49,91,72,0.2)] transition-colors'
                 )}
+                style={{ color: 'var(--reader-ink-secondary, #62675F)' }}
               >
                 <span aria-hidden="true">{categoryIcon}</span>
                 <span>{categoryLabel}</span>
@@ -137,7 +114,8 @@ const ForumPostCard = ({
                 {post.tags.slice(0, 4).map((tag) => (
                   <span
                     key={tag}
-                    className="px-2 py-0.5 font-roboto text-xs text-brand-dark-gray/60 bg-brand-linen/30 rounded"
+                    className="px-2 py-0.5 text-xs rounded-md"
+                    style={{ color: 'var(--reader-ink-secondary, #62675F)', background: 'rgba(242,240,232,0.5)' }}
                   >
                     #{tag}
                   </span>
@@ -156,7 +134,7 @@ const ForumPostCard = ({
                   ·
                 </span>
                 <span className="font-roboto text-xs text-brand-light-gray">
-                  {formatTime(post.createdAt)}
+                  {formatDateTime(post.createdAt)}
                 </span>
               </div>
 

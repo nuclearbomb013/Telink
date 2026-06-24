@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { gsap } from 'gsap';
-import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { gsap, ScrollTrigger } from '@/lib/gsap';
+import { useReduceMotion } from '@/hooks/useReduceMotion';
+import { EASING, DURATION, STAGGER } from '@/constants/animation.constants';
 import { ArrowRight, Calendar } from 'lucide-react';
-import { artCategoryConfig } from '@/config';
+import { artCategoryConfig } from '@/config/topics.config';
 
 /**
  * Art Category Section Component
@@ -17,14 +18,13 @@ const ArtCategory = () => {
   const sidebarRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const [activeCategory, setActiveCategory] = useState(artCategoryConfig.categories[0] || '');
+  const prefersReducedMotion = useReduceMotion();
 
   // Check if we should render
   const shouldRender = Boolean(artCategoryConfig.sectionTitle || artCategoryConfig.gridArticles.length > 0);
 
   useEffect(() => {
     if (!shouldRender) return;
-
-    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     if (prefersReducedMotion) {
       return;
@@ -37,8 +37,8 @@ const ArtCategory = () => {
         { clipPath: 'circle(0% at 50% 50%)' },
         {
           clipPath: 'circle(150% at 50% 50%)',
-          duration: 1.4,
-          ease: 'power3.inOut',
+          duration: DURATION.slowest,
+          ease: EASING.power3InOut,
           scrollTrigger: {
             trigger: featuredImageRef.current,
             start: 'top 80%',
@@ -55,9 +55,9 @@ const ArtCategory = () => {
           {
             x: 0,
             opacity: 1,
-            duration: 0.8,
-            stagger: 0.1,
-            ease: 'back.out(1.7)',
+            duration: DURATION.slow,
+            stagger: STAGGER.normal,
+            ease: EASING.backOut,
             scrollTrigger: {
               trigger: sidebarRef.current,
               start: 'top 80%',
@@ -75,9 +75,9 @@ const ArtCategory = () => {
           {
             y: 0,
             opacity: 1,
-            duration: 0.8,
-            stagger: 0.15,
-            ease: 'power3.out',
+            duration: DURATION.slow,
+            stagger: STAGGER.slow,
+            ease: EASING.power3Out,
             scrollTrigger: {
               trigger: gridRef.current,
               start: 'top 85%',
@@ -109,7 +109,7 @@ const ArtCategory = () => {
     }, sectionRef);
 
     return () => ctx.revert();
-  }, [shouldRender]);
+  }, [shouldRender, prefersReducedMotion]);
 
   // Move conditional render to return statement
   if (!shouldRender) {

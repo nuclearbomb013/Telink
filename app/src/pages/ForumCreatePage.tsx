@@ -4,11 +4,25 @@
  * 创建新帖子的表单页面
  */
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Eye, EyeOff, Tags, Image as ImageIcon, Link as LinkIcon } from 'lucide-react';
+import {
+  ArrowLeft,
+  Bold,
+  Code2,
+  Eye,
+  EyeOff,
+  Image as ImageIcon,
+  Italic,
+  Link as LinkIcon,
+  Link2,
+  List,
+  Quote,
+  Tags,
+} from 'lucide-react';
 
 import { cn } from '@/lib/utils';
+import OptimizedImage from '@/components/OptimizedImage';
 import { forumService } from '@/services/forum.service';
 import { useAuth } from '@/hooks/useAuth';
 import type { ForumCategory, CreateForumPostData } from '@/services/forum.types';
@@ -30,11 +44,24 @@ const categories: Array<{ value: ForumCategory; label: string; icon: string; des
   { value: 'jobs', label: '招聘求职', icon: '💼', description: '工作机会、求职信息' },
 ];
 
+type MarkdownAction = 'bold' | 'italic' | 'inline-code' | 'code-block' | 'link' | 'quote' | 'list';
+
+const markdownTools: Array<{ action: MarkdownAction; label: string; icon: typeof Bold }> = [
+  { action: 'bold', label: 'Bold', icon: Bold },
+  { action: 'italic', label: 'Italic', icon: Italic },
+  { action: 'inline-code', label: 'Inline code', icon: Code2 },
+  { action: 'code-block', label: 'Code block', icon: Code2 },
+  { action: 'link', label: 'Link', icon: Link2 },
+  { action: 'quote', label: 'Quote', icon: Quote },
+  { action: 'list', label: 'List', icon: List },
+];
+
 /**
  * ForumCreatePage 组件
  */
 const ForumCreatePage = () => {
   const navigate = useNavigate();
+  const contentRef = useRef<HTMLTextAreaElement>(null);
 
   // 用户状态 - 使用全局认证状态
   const { user: currentUser, isAuthenticated } = useAuth();
@@ -55,6 +82,67 @@ const ForumCreatePage = () => {
   // 图片上传模式：'upload' 或 'url'
   const [imageMode, setImageMode] = useState<'upload' | 'url'>('upload');
   const [imageUrl, setImageUrl] = useState('');
+
+  const applyMarkdown = (action: MarkdownAction) => {
+    const textarea = contentRef.current;
+    if (!textarea || isSubmitting) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selected = content.slice(start, end);
+    let replacement = '';
+    let cursorStart = start;
+    let cursorEnd = start;
+
+    if (action === 'bold') {
+      const value = selected || 'bold text';
+      replacement = `**${value}**`;
+      cursorStart = start + 2;
+      cursorEnd = cursorStart + value.length;
+    } else if (action === 'italic') {
+      const value = selected || 'italic text';
+      replacement = `*${value}*`;
+      cursorStart = start + 1;
+      cursorEnd = cursorStart + value.length;
+    } else if (action === 'inline-code') {
+      const value = selected || 'code';
+      replacement = `\`${value}\``;
+      cursorStart = start + 1;
+      cursorEnd = cursorStart + value.length;
+    } else if (action === 'code-block') {
+      const value = selected || 'const value = true;';
+      replacement = `\n\`\`\`ts\n${value}\n\`\`\`\n`;
+      cursorStart = start + 7;
+      cursorEnd = cursorStart + value.length;
+    } else if (action === 'link') {
+      const value = selected || 'link text';
+      replacement = `[${value}](https://example.com)`;
+      cursorStart = start + 1;
+      cursorEnd = cursorStart + value.length;
+    } else if (action === 'quote') {
+      const value = selected || 'quote';
+      replacement = value
+        .split('\n')
+        .map(line => `> ${line}`)
+        .join('\n');
+      cursorStart = start + 2;
+      cursorEnd = cursorStart + value.length;
+    } else {
+      const value = selected || 'list item';
+      replacement = value
+        .split('\n')
+        .map(line => `- ${line}`)
+        .join('\n');
+      cursorStart = start + 2;
+      cursorEnd = cursorStart + value.length;
+    }
+
+    setContent(`${content.slice(0, start)}${replacement}${content.slice(end)}`);
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(cursorStart, cursorEnd);
+    });
+  };
 
   /**
    * 验证表单
@@ -271,7 +359,26 @@ const ForumCreatePage = () => {
                 </Card>
               ) : (
                 <>
+                  <div className="mb-2 flex flex-wrap items-center gap-1 rounded-lg border border-brand-border/40 bg-white/60 p-1">
+                    {markdownTools.map((tool) => {
+                      const Icon = tool.icon;
+                      return (
+                        <button
+                          key={tool.action}
+                          type="button"
+                          onClick={() => applyMarkdown(tool.action)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-brand-dark-gray transition-colors hover:bg-brand-linen hover:text-brand-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#315B48]"
+                          aria-label={tool.label}
+                          title={tool.label}
+                          disabled={isSubmitting}
+                        >
+                          <Icon size={16} />
+                        </button>
+                      );
+                    })}
+                  </div>
                   <Textarea
+                    ref={contentRef}
                     id="content"
                     placeholder="写下你的想法...（支持 Markdown 语法）"
                     value={content}
@@ -391,16 +498,14 @@ const ForumCreatePage = () => {
                   </div>
                   {imageUrl && (
                     <div className="rounded-lg overflow-hidden border border-brand-border/30">
-                      <img
+                      <OptimizedImage
                         src={imageUrl}
                         alt="封面预览"
+                        width={640}
+                        height={224}
+                        sizes="(max-width: 1024px) calc(100vw - 3rem), 640px"
                         className="w-full h-56 object-cover"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                        }}
-                        onLoad={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'block';
-                        }}
+                        loading="eager"
                       />
                     </div>
                   )}

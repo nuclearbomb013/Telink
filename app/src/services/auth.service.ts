@@ -488,7 +488,7 @@ class AuthService {
   async refreshToken(): Promise<AuthServiceResponse<AuthToken>> {
     try {
       // P0-4: Empty body - refresh token comes from HttpOnly cookie
-      const response = await authApi.refresh('');
+      const response = await authApi.refresh();
 
       if (!response.success || !response.data) {
         // 刷新失败，清理状态

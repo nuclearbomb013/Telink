@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { gsap } from 'gsap';
+import { gsap } from '@/lib/gsap';
 import { ArrowRight } from 'lucide-react';
 
-import { heroConfig } from '@/config';
+import { heroConfig } from '@/config/hero.config';
 import { useReduceMotion } from '@/hooks/useReduceMotion';
 import { HERO_CONFIG, EASING, DURATION } from '@/constants/animation.constants';
 

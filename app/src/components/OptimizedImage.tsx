@@ -6,6 +6,10 @@ import { useState, useCallback, memo } from 'react';
 interface OptimizedImageProps {
   /** Image source URL */
   src: string;
+  /** Responsive image sources */
+  srcSet?: string;
+  /** Responsive image sizes */
+  sizes?: string;
   /** Alt text for accessibility */
   alt: string;
   /** Width of the image */
@@ -26,6 +30,8 @@ interface OptimizedImageProps {
   objectFit?: 'cover' | 'contain' | 'fill' | 'none' | 'scale-down';
   /** Placeholder while loading */
   placeholder?: 'blur' | 'empty';
+  /** Additional inline styles */
+  style?: React.CSSProperties;
 }
 
 /**
@@ -51,6 +57,8 @@ interface OptimizedImageProps {
  */
 const OptimizedImage = memo<OptimizedImageProps>(({
   src,
+  srcSet,
+  sizes,
   alt,
   width,
   height,
@@ -61,6 +69,7 @@ const OptimizedImage = memo<OptimizedImageProps>(({
   onLoad,
   objectFit = 'cover',
   placeholder = 'empty',
+  style,
 }) => {
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
@@ -97,6 +106,8 @@ const OptimizedImage = memo<OptimizedImageProps>(({
   return (
     <img
       src={src}
+      srcSet={srcSet}
+      sizes={sizes}
       alt={alt}
       width={width}
       height={height}
@@ -108,6 +119,7 @@ const OptimizedImage = memo<OptimizedImageProps>(({
       style={{
         objectFit,
         ...(!isLoaded ? placeholderStyle : {}),
+        ...style,
       }}
     />
   );

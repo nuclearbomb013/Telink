@@ -16,6 +16,8 @@ import ForumPostCard from '@/components/Forum/ForumPostCard';
 import ForumCategoryFilter from '@/components/Forum/ForumCategoryFilter';
 import ForumPagination from '@/components/Forum/ForumPagination';
 import ForumStatsSidebar from '@/components/Forum/ForumStatsSidebar';
+import { PostListSkeleton } from '@/components/Forum/LoadingSkeleton';
+import { EmptyPosts, EmptySearch } from '@/components/Forum/EmptyState';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 
@@ -50,7 +52,9 @@ const ForumListPage = () => {
   const [sortBy, setSortBy] = useState<SortOption>(
     (searchParams.get('sort') as SortOption) || 'default'
   );
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(
+    searchParams.get('search') || ''
+  );
   const [currentPage, setCurrentPage] = useState(
     parseInt(searchParams.get('page') || '1', 10)
   );
@@ -91,9 +95,12 @@ const ForumListPage = () => {
     if (category !== 'all') params.set('category', category);
     if (sortBy !== 'default') params.set('sort', sortBy);
     if (currentPage > 1) params.set('page', currentPage.toString());
+    if (searchQuery) params.set('search', searchQuery);
 
     setSearchParams(params);
-  }, [category, sortBy, currentPage, setSearchParams]);
+    // setSearchParams is stable across renders, safe to exclude from deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [category, sortBy, currentPage, searchQuery]);
 
   /**
    * 处理分类变化
@@ -160,7 +167,7 @@ const ForumListPage = () => {
         </div>
 
         {/* 搜索和排序栏 */}
-        <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center mb-8 pb-6 border-b border-brand-border/30">
+        <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center mb-8 pb-6" style={{ borderBottom: '1px solid #CFCEC4' }}>
           {/* 搜索框 */}
           <form onSubmit={handleSearch} className="w-full sm:w-80">
             <div className="relative">
@@ -203,29 +210,10 @@ const ForumListPage = () => {
           {/* 左侧 - 帖子列表 */}
           <div className="lg:col-span-3">
             {loading ? (
-              <div className="space-y-4">
-                {[...Array(5)].map((_, i) => (
-                  <div
-                    key={i}
-                    className="h-32 bg-brand-border/10 rounded-lg animate-pulse"
-                  />
-                ))}
-              </div>
+              <PostListSkeleton count={5} />
             ) : posts.length === 0 ? (
               <div className="text-center py-20">
-                <div className="text-6xl mb-4" aria-hidden="true">📋</div>
-                <h3 className="font-oswald text-xl text-brand-text mb-2">
-                  暂无帖子
-                </h3>
-                <p className="font-roboto text-brand-dark-gray/70 mb-6">
-                  来发布第一个帖子吧！
-                </p>
-                <Link to="/forum/create">
-                  <Button className="bg-brand-text text-white hover:bg-brand-dark-gray">
-                    <Plus size={18} className="mr-2" />
-                    发布第一个帖子
-                  </Button>
-                </Link>
+                {searchQuery ? <EmptySearch query={searchQuery} /> : <EmptyPosts />}
               </div>
             ) : (
               <>

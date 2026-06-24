@@ -125,7 +125,10 @@ class NotificationService {
         return;
       }
 
-      const response = await notificationApi.markAsRead(parseInt(id, 10));
+      const numericId = parseInt(id, 10);
+      if (isNaN(numericId)) return;
+
+      const response = await notificationApi.markAsRead(numericId);
 
       if (response.success) {
         // 更新本地缓存
@@ -174,7 +177,10 @@ class NotificationService {
         return;
       }
 
-      const response = await notificationApi.deleteNotification(parseInt(id, 10));
+      const numericId = parseInt(id, 10);
+      if (isNaN(numericId)) return;
+
+      const response = await notificationApi.deleteNotification(numericId);
 
       if (response.success) {
         // 更新本地缓存
