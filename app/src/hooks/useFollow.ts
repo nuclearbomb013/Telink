@@ -156,9 +156,8 @@ export function useFollow({
         setIsFollowing(true);
         setFollowerCount(prev => prev + 1);
 
-        // 检查是否变成互关
-        const mutual = followService.isMutualSync(currentUserId, targetUserId);
-        setIsMutual(mutual);
+        // Refresh status to get accurate mutual state from backend
+        await loadFollowStatus();
 
         return { success: true, message: '关注成功' };
       } else {
@@ -173,7 +172,7 @@ export function useFollow({
     } finally {
       setIsLoading(false);
     }
-  }, [currentUserId, targetUserId, isFollowing]);
+  }, [currentUserId, targetUserId, isFollowing, loadFollowStatus]);
 
   /**
    * 取消关注

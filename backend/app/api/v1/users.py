@@ -9,6 +9,7 @@ from sqlalchemy import select, func
 
 from app.api.deps import get_db, get_current_user
 from app.models.user import User, UserRole
+from app.models.follow import Follow
 from app.models.base import utcnow_naive
 from app.schemas import (
     ServiceResponse,
@@ -330,13 +331,24 @@ async def get_user_stats(
             }
         )
 
+    # Get real follow counts from follows table
+    follower_result = await db.execute(
+        select(func.count()).select_from(Follow).where(Follow.following_id == user_id)
+    )
+    follower_count = follower_result.scalar() or 0
+
+    following_result = await db.execute(
+        select(func.count()).select_from(Follow).where(Follow.follower_id == user_id)
+    )
+    following_count = following_result.scalar() or 0
+
     return ServiceResponse(
         success=True,
         data=UserStats(
             post_count=user.post_count,
             comment_count=user.comment_count,
             like_count=user.like_count,
-            following_count=0,  # TODO: Implement follow system
-            follower_count=0
+            following_count=following_count,
+            follower_count=follower_count,
         )
     )

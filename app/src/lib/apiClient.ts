@@ -1055,7 +1055,7 @@ export interface MomentListResult {
 }
 
 export const momentApi = {
-  getMoments: (params?: { page?: number; limit?: number; sort_by?: string; user_id?: number }) =>
+  getMoments: (params?: { page?: number; limit?: number; sort_by?: string; user_id?: number; following_only?: boolean }) =>
     apiClient.get<MomentListResult>('/moments', params as Record<string, string | number>),
 
   createMoment: (data: CreateMomentData) =>
@@ -1150,6 +1150,69 @@ export const articleApi = {
 
   publishArticle: (id: number) =>
     apiClient.post<ArticleApiResponse>(`/articles/${id}/publish`, {}),
+};
+
+// ==================== 关注 (Follow) API ====================
+
+export interface FollowStatusData {
+  user_id: number;
+  username: string;
+  avatar?: string;
+  bio?: string;
+  is_following: boolean;
+  is_mutual: boolean;
+  follower_count: number;
+  following_count: number;
+}
+
+export interface FollowUserInfoData {
+  id: number;
+  username: string;
+  avatar?: string;
+  bio?: string;
+  is_following: boolean;
+  is_mutual: boolean;
+  follower_count: number;
+  following_count: number;
+  moment_count: number;
+}
+
+export interface FollowListResultData {
+  users: FollowUserInfoData[];
+  total: number;
+  page: number;
+  limit: number;
+  has_more: boolean;
+}
+
+export interface FollowStatsData {
+  user_id: number;
+  follower_count: number;
+  following_count: number;
+  friend_count: number;
+}
+
+export const followApi = {
+  follow: (targetUserId: number) =>
+    apiClient.post<{ message: string }>(`/follow/${targetUserId}`),
+
+  unfollow: (targetUserId: number) =>
+    apiClient.delete<{ message: string; removed: boolean }>(`/follow/${targetUserId}`),
+
+  getStatus: (targetUserId: number) =>
+    apiClient.get<FollowStatusData>(`/follow/${targetUserId}/status`),
+
+  getFollowing: (userId: number, params?: { page?: number; limit?: number }) =>
+    apiClient.get<FollowListResultData>(`/follow/${userId}/following`, params as Record<string, string | number>),
+
+  getFollowers: (userId: number, params?: { page?: number; limit?: number }) =>
+    apiClient.get<FollowListResultData>(`/follow/${userId}/followers`, params as Record<string, string | number>),
+
+  getFriends: (userId: number, params?: { page?: number; limit?: number }) =>
+    apiClient.get<FollowListResultData>(`/follow/${userId}/friends`, params as Record<string, string | number>),
+
+  getStats: (userId: number) =>
+    apiClient.get<FollowStatsData>(`/follow/${userId}/stats`),
 };
 
 // ==================== 收藏 (Favorites) API ====================

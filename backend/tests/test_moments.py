@@ -242,3 +242,262 @@ class TestMomentsAPI:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             r = await client.get("/api/v1/moments/999999/comments")
             assert r.json()["error"]["code"] == "NOT_FOUND"
+
+
+class TestMomentsFollowingOnly:
+    """Tests for following_only filter and visibility interactions."""
+
+    @pytest.mark.asyncio
+    async def test_following_only_unauthorized(self, test_app):
+        """following_only=true without auth returns UNAUTHORIZED."""
+        transport = ASGITransport(app=test_app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.get("/api/v1/moments?following_only=true")
+            assert r.json()["success"] is False
+            assert r.json()["error"]["code"] == "UNAUTHORIZED"
+
+    @pytest.mark.asyncio
+    async def test_followers_visible_to_follower(self, test_app, test_session_maker):
+        """A follower can see followers-visibility moments, non-follower cannot."""
+        uA = await _create_test_user(test_session_maker)
+        uB = await _create_test_user(test_session_maker)  # uB follows uA
+        uC = await _create_test_user(test_session_maker)  # uC does not follow uA
+        try:
+            transport = ASGITransport(app=test_app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                # uA creates a public and followers moment
+                await client.post(
+                    "/api/v1/moments",
+                    json={"content": "pub from A", "visibility": "public"},
+                    headers=_token(uA),
+                )
+                await client.post(
+                    "/api/v1/moments",
+                    json={"content": "followers from A", "visibility": "followers"},
+                    headers=_token(uA),
+                )
+
+                # uB follows uA
+                await client.post(f"/api/v1/follow/{uA.id}", headers=_token(uB))
+
+                # uB sees both moments
+                r = await client.get("/api/v1/moments", headers=_token(uB))
+                contents = [m["content"] for m in r.json()["data"]["moments"]]
+                assert "pub from A" in contents
+                assert "followers from A" in contents
+
+                # uC (non-follower) sees only public
+                r = await client.get("/api/v1/moments", headers=_token(uC))
+                contents = [m["content"] for m in r.json()["data"]["moments"]]
+                assert "pub from A" in contents
+                assert "followers from A" not in contents
+
+                # uB following_only also sees both (own + followed)
+                r = await client.get(
+                    "/api/v1/moments?following_only=true", headers=_token(uB)
+                )
+                contents = [m["content"] for m in r.json()["data"]["moments"]]
+                assert "pub from A" in contents
+                assert "followers from A" in contents
+        finally:
+            await _cleanup_user(test_session_maker, uA.id)
+            await _cleanup_user(test_session_maker, uB.id)
+            await _cleanup_user(test_session_maker, uC.id)
+
+    @pytest.mark.asyncio
+    async def test_private_not_visible_to_follower(self, test_app, test_session_maker):
+        """Followers cannot see private moments via following_only or normal feed."""
+        uA = await _create_test_user(test_session_maker)
+        uB = await _create_test_user(test_session_maker)
+        try:
+            transport = ASGITransport(app=test_app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                await client.post(
+                    "/api/v1/moments",
+                    json={"content": "private from A", "visibility": "private"},
+                    headers=_token(uA),
+                )
+
+                # uB follows uA
+                await client.post(f"/api/v1/follow/{uA.id}", headers=_token(uB))
+
+                # uB should NOT see uA's private moment in normal feed
+                r = await client.get("/api/v1/moments", headers=_token(uB))
+                contents = [m["content"] for m in r.json()["data"]["moments"]]
+                assert "private from A" not in contents
+
+                # uB should NOT see it in following_only either
+                r = await client.get(
+                    "/api/v1/moments?following_only=true", headers=_token(uB)
+                )
+                contents = [m["content"] for m in r.json()["data"]["moments"]]
+                assert "private from A" not in contents
+
+                # uA sees their own private moment
+                r = await client.get("/api/v1/moments", headers=_token(uA))
+                contents = [m["content"] for m in r.json()["data"]["moments"]]
+                assert "private from A" in contents
+        finally:
+            await _cleanup_user(test_session_maker, uA.id)
+            await _cleanup_user(test_session_maker, uB.id)
+
+    @pytest.mark.asyncio
+    async def test_unfollow_hides_followers_visibility(self, test_app, test_session_maker):
+        """After unfollowing, followers-visibility moments are hidden."""
+        uA = await _create_test_user(test_session_maker)
+        uB = await _create_test_user(test_session_maker)
+        try:
+            transport = ASGITransport(app=test_app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                await client.post(
+                    "/api/v1/moments",
+                    json={"content": "followers from A", "visibility": "followers"},
+                    headers=_token(uA),
+                )
+
+                # uB follows uA, sees it
+                await client.post(f"/api/v1/follow/{uA.id}", headers=_token(uB))
+                r = await client.get(
+                    "/api/v1/moments?following_only=true", headers=_token(uB)
+                )
+                assert "followers from A" in [m["content"] for m in r.json()["data"]["moments"]]
+
+                # uB unfollows uA
+                await client.delete(f"/api/v1/follow/{uA.id}", headers=_token(uB))
+                r = await client.get(
+                    "/api/v1/moments?following_only=true", headers=_token(uB)
+                )
+                contents = [m["content"] for m in r.json()["data"]["moments"]]
+                assert "followers from A" not in contents
+        finally:
+            await _cleanup_user(test_session_maker, uA.id)
+            await _cleanup_user(test_session_maker, uB.id)
+
+    @pytest.mark.asyncio
+    async def test_following_only_excludes_non_followed(self, test_app, test_session_maker):
+        """following_only only shows followed users + self."""
+        uA = await _create_test_user(test_session_maker)
+        uB = await _create_test_user(test_session_maker)  # followed by uA
+        uC = await _create_test_user(test_session_maker)  # not followed
+        try:
+            transport = ASGITransport(app=test_app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                await client.post(
+                    "/api/v1/moments",
+                    json={"content": "from A", "visibility": "public"},
+                    headers=_token(uA),
+                )
+                await client.post(
+                    "/api/v1/moments",
+                    json={"content": "from B", "visibility": "public"},
+                    headers=_token(uB),
+                )
+                await client.post(
+                    "/api/v1/moments",
+                    json={"content": "from C", "visibility": "public"},
+                    headers=_token(uC),
+                )
+
+                # uA follows B
+                await client.post(f"/api/v1/follow/{uB.id}", headers=_token(uA))
+
+                r = await client.get(
+                    "/api/v1/moments?following_only=true", headers=_token(uA)
+                )
+                contents = [m["content"] for m in r.json()["data"]["moments"]]
+                assert "from A" in contents  # self
+                assert "from B" in contents  # followed
+                assert "from C" not in contents  # not followed
+        finally:
+            await _cleanup_user(test_session_maker, uA.id)
+            await _cleanup_user(test_session_maker, uB.id)
+            await _cleanup_user(test_session_maker, uC.id)
+
+
+class TestMomentsCounters:
+    """Tests for like/comment counter correctness."""
+
+    @pytest.mark.asyncio
+    async def test_unlike_does_not_go_below_zero(self, test_app, test_session_maker):
+        """Unlike on a zero-liked moment should not produce negative count."""
+        user = await _create_test_user(test_session_maker)
+        try:
+            transport = ASGITransport(app=test_app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                r = await client.post(
+                    "/api/v1/moments",
+                    json={"content": "zero_likes_test"},
+                    headers=_token(user),
+                )
+                mid = r.json()["data"]["id"]
+                assert r.json()["data"]["likes"] == 0
+
+                # Like -> 1
+                r = await client.post(f"/api/v1/moments/{mid}/like", headers=_token(user))
+                assert r.json()["data"]["liked"] is True
+                assert r.json()["data"]["likes"] == 1
+
+                # Unlike -> 0
+                r = await client.post(f"/api/v1/moments/{mid}/like", headers=_token(user))
+                assert r.json()["data"]["liked"] is False
+                assert r.json()["data"]["likes"] == 0
+
+                # Unlike on zero-liked moment -> no-op (rowcount=0, likes stays >=0)
+                # The delete with WHERE likes>0 guard prevents going below 0
+                r = await client.post(f"/api/v1/moments/{mid}/like", headers=_token(user))
+                assert r.json()["data"]["liked"] is True  # Re-likes (no existing row)
+                assert r.json()["data"]["likes"] == 1
+
+                # Now unlike to go back to 0 and verify it can't go negative via delete
+                r = await client.post(f"/api/v1/moments/{mid}/like", headers=_token(user))
+                assert r.json()["data"]["likes"] == 0
+                # Force another delete-like (would decrement if guard absent)
+                r = await client.post(f"/api/v1/moments/{mid}/like", headers=_token(user))
+                assert r.json()["data"]["liked"] is True
+                # Verify we never went below 0
+                assert r.json()["data"]["likes"] >= 0
+        finally:
+            await _cleanup_user(test_session_maker, user.id)
+
+    @pytest.mark.asyncio
+    async def test_comment_count_never_negative(self, test_app, test_session_maker):
+        """Deleting a comment on a zero-comment moment shouldn't go below 0."""
+        u1 = await _create_test_user(test_session_maker)
+        try:
+            transport = ASGITransport(app=test_app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                r = await client.post(
+                    "/api/v1/moments",
+                    json={"content": "zero_comment_test"},
+                    headers=_token(u1),
+                )
+                mid = r.json()["data"]["id"]
+                assert r.json()["data"]["comment_count"] == 0
+
+                # Add then delete a comment
+                r = await client.post(
+                    f"/api/v1/moments/{mid}/comments",
+                    json={"content": "temp"},
+                    headers=_token(u1),
+                )
+                cid = r.json()["data"]["id"]
+                await client.delete(
+                    f"/api/v1/moments/{mid}/comments/{cid}",
+                    headers=_token(u1),
+                )
+
+                # Verify count is back to 0
+                r = await client.get("/api/v1/moments", headers=_token(u1))
+                target = [m for m in r.json()["data"]["moments"] if m["id"] == mid][0]
+                assert target["comment_count"] == 0
+
+                # Delete again (should not go negative)
+                await client.delete(
+                    f"/api/v1/moments/{mid}/comments/{cid}",
+                    headers=_token(u1),
+                )
+                r = await client.get("/api/v1/moments", headers=_token(u1))
+                target = [m for m in r.json()["data"]["moments"] if m["id"] == mid][0]
+                assert target["comment_count"] == 0
+        finally:
+            await _cleanup_user(test_session_maker, u1.id)

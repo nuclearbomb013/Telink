@@ -70,6 +70,13 @@ from app.schemas.favorite import (
     FavoriteCheckResult,
     FavoriteListResult,
 )
+from app.schemas.follow import (
+    FollowStatusResponse,
+    FollowUserInfo,
+    FollowListResult,
+    FollowStatsResponse,
+    FollowCheckManyResponse,
+)
 
 __all__ = [
     # Common
@@ -129,4 +136,10 @@ __all__ = [
     "FavoriteResponse",
     "FavoriteCheckResult",
     "FavoriteListResult",
+    # Follow
+    "FollowStatusResponse",
+    "FollowUserInfo",
+    "FollowListResult",
+    "FollowStatsResponse",
+    "FollowCheckManyResponse",
 ]

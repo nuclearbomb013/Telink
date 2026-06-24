@@ -76,9 +76,7 @@ class MomentService {
    * Get a paginated list of moments.
    */
   async getMoments(
-    params: GetMomentsParams = {},
-    _currentUserId?: number,
-    _followingIds: number[] = []
+    params: GetMomentsParams = {}
   ): Promise<MomentServiceResponse<MomentListResult>> {
     try {
       const response = await momentApi.getMoments({
@@ -86,6 +84,7 @@ class MomentService {
         limit: params.limit,
         sort_by: params.sortBy,
         user_id: params.userId,
+        following_only: params.followingOnly,
       });
 
       if (!response.success || !response.data) {

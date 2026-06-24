@@ -11,6 +11,7 @@ from app.models.moment import Moment, MomentLike, MomentComment
 from app.models.notification import Notification, NotificationType
 from app.models.token_blacklist import TokenBlacklist
 from app.models.favorite import Favorite
+from app.models.follow import Follow
 
 __all__ = [
     "BaseModel",
@@ -29,6 +30,7 @@ __all__ = [
     "MomentLike",
     "MomentComment",
     "Favorite",
+    "Follow",
     "Notification",
     "NotificationType",
     "TokenBlacklist",

@@ -202,6 +202,7 @@ async def get_article_by_slug(
     # Increment views
     article.views = (article.views or 0) + 1
     await db.flush()
+    await db.commit()
 
     return ServiceResponse(
         success=True,
@@ -325,12 +326,14 @@ async def create_article(
 
             await db.flush()
             await db.refresh(article)
+            await db.commit()
             return ServiceResponse(
                 success=True,
                 data=ArticleResponse(**await transform_article_to_response(article, db)),
             )
         except Exception as e:
             logger.error("create_article error: %s", e, exc_info=True)
+            await db.rollback()
             if attempt == max_retries - 1:
                 raise
             continue
@@ -403,6 +406,7 @@ async def update_article(
                 ))
 
     await db.flush()
+    await db.commit()
     return ServiceResponse(
         success=True,
         data=ArticleResponse(**await transform_article_to_response(article, db)),
@@ -433,6 +437,7 @@ async def delete_article(
 
     await db.delete(article)
     await db.flush()
+    await db.commit()
 
     return ServiceResponse(
         success=True,
@@ -467,6 +472,7 @@ async def publish_article(
         article.published_at = int(datetime.now(timezone.utc).timestamp() * 1000)
 
     await db.flush()
+    await db.commit()
     return ServiceResponse(
         success=True,
         data=ArticleResponse(**await transform_article_to_response(article, db)),

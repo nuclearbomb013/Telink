@@ -6,12 +6,14 @@ Social feed / WeChat Moments style dynamic posts.
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, or_, update, delete
+from sqlalchemy.exc import IntegrityError
 import logging
 
 from app.api.deps import get_db, get_current_active_user, get_current_user_optional
 from app.models.user import User
 from app.models.moment import Moment, MomentLike, MomentComment
+from app.models.follow import Follow
 from app.schemas import ServiceResponse
 from app.schemas.moment import (
     MomentCreate, MomentUpdate, MomentResponse,
@@ -54,27 +56,61 @@ async def get_moments(
     db: AsyncSession = Depends(get_db),
     current_user: User | None = Depends(get_current_user_optional),
 ):
-    """Get paginated list of moments with visibility filtering."""
+    """Get paginated list of moments with visibility filtering.
+
+    Visibility rules:
+    - public: visible to everyone
+    - followers: visible only to the author and users who follow the author
+    - private: visible only to the author
+
+    following_only=True requires authentication (returns UNAUTHORIZED if not logged in).
+    When active, only shows moments from users the current user follows, plus their own moments,
+    respecting the visibility rules above.
+    """
+    if following_only and not current_user:
+        return ServiceResponse(
+            success=False,
+            error={"code": "UNAUTHORIZED", "message": "Authentication required for following_only"},
+        )
+
     query = select(Moment).where(Moment.is_deleted.is_(False))
 
     # User filter
     if user_id:
         query = query.where(Moment.author_id == user_id)
 
-    # Visibility: public for all, followers/private for auth users
+    # Build following subquery (reused for both visibility and following_only)
+    following_subq = None
     if current_user:
-        # Show: public OR (followers/private AND author)
-        query = query.where(
-            (Moment.visibility == "public") |
-            (Moment.author_id == current_user.id)
+        following_subq = select(Follow.following_id).where(
+            Follow.follower_id == current_user.id
         )
+
+    # Visibility rules
+    if current_user:
+        # Logged-in user can see:
+        #   - public moments
+        #   - their own moments (any visibility)
+        #   - followers-visible moments from users they follow
+        visibility_conditions = [
+            Moment.visibility == "public",
+            Moment.author_id == current_user.id,
+        ]
+        if following_subq is not None:
+            visibility_conditions.append(
+                (Moment.visibility == "followers") & Moment.author_id.in_(following_subq)
+            )
+        query = query.where(or_(*visibility_conditions))
     else:
+        # Anonymous users can only see public moments
         query = query.where(Moment.visibility == "public")
 
-    # Following only (requires auth)
-    if following_only and current_user:
-        # TODO: integrate with follow system
-        pass
+    # Following-only filter (only moments from followed users + self)
+    if following_only and current_user and following_subq is not None:
+        query = query.where(
+            (Moment.author_id == current_user.id)
+            | Moment.author_id.in_(following_subq)
+        )
 
     # Sorting
     if sort_by == "popular":
@@ -234,35 +270,64 @@ async def toggle_moment_like(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Toggle like on a moment."""
+    """Toggle like on a moment. Uses atomic SQL updates to prevent race conditions.
+
+    - Uses delete() with rowcount to detect whether a like actually existed (avoid
+      concurrent double-unlike undercounting).
+    - Guards against likes going below 0.
+    - On IntegrityError (duplicate like), rolls back and treats as already-liked
+      without double-incrementing the counter.
+    """
+    # Verify moment exists
     result = await db.execute(
         select(Moment).where(Moment.id == moment_id, Moment.is_deleted.is_(False))
     )
-    moment = result.scalar_one_or_none()
-    if not moment:
+    if not result.scalar_one_or_none():
         return ServiceResponse(success=False, error={"code": "NOT_FOUND", "message": "Moment not found"})
 
-    # Check existing like
-    like_result = await db.execute(
-        select(MomentLike).where(
-            MomentLike.moment_id == moment_id,
-            MomentLike.user_id == current_user.id,
-        )
+    # Try to delete existing like
+    del_stmt = delete(MomentLike).where(
+        MomentLike.moment_id == moment_id,
+        MomentLike.user_id == current_user.id,
     )
-    existing = like_result.scalar_one_or_none()
+    del_result = await db.execute(del_stmt)
 
-    if existing:
-        await db.delete(existing)
-        # P0-3: Atomic counter update to prevent race conditions
-        moment.likes = max(0, moment.likes - 1)
+    if del_result.rowcount and del_result.rowcount > 0:
+        # Unlike: we confirmed a like existed, decrement counter (guard >=0)
+        await db.execute(
+            update(Moment)
+            .where(Moment.id == moment_id, Moment.likes > 0)
+            .values(likes=Moment.likes - 1)
+        )
         liked = False
     else:
+        # Like: insert new row, handle IntegrityError for concurrent duplicate
         db.add(MomentLike(moment_id=moment_id, user_id=current_user.id))
-        moment.likes = (moment.likes or 0) + 1
-        liked = True
+        try:
+            await db.flush()
+            await db.execute(
+                update(Moment)
+                .where(Moment.id == moment_id)
+                .values(likes=Moment.likes + 1)
+            )
+            liked = True
+        except IntegrityError:
+            await db.rollback()
+            # Already liked by another concurrent request — idempotent, don't re-increment
+            liked = True
 
     await db.commit()
-    return ServiceResponse(success=True, data={"liked": liked, "likes": moment.likes})
+
+    # Re-read moment to get the real count after atomic operations
+    result = await db.execute(
+        select(Moment.likes).where(Moment.id == moment_id)
+    )
+    real_likes = result.scalar() or 0
+
+    return ServiceResponse(
+        success=True,
+        data={"liked": liked, "likes": real_likes},
+    )
 
 
 # ==================== Comment endpoints ====================
@@ -325,7 +390,7 @@ async def create_moment_comment(
     if not moment:
         return ServiceResponse(success=False, error={"code": "NOT_FOUND", "message": "Moment not found"})
 
-    # P0-3: Validate reply_to_name from database to prevent spoofing
+    # Validate reply_to_name from database to prevent spoofing
     validated_reply_to_name: str | None = None
     if data.reply_to_id is not None:
         reply_to_result = await db.execute(
@@ -350,9 +415,14 @@ async def create_moment_comment(
         reply_to_name=validated_reply_to_name,
     )
     db.add(comment)
+    await db.flush()  # Get comment.id before commit
 
-    # Update comment count
-    moment.comment_count = (moment.comment_count or 0) + 1
+    # Atomic comment count increment
+    await db.execute(
+        update(Moment)
+        .where(Moment.id == moment_id)
+        .values(comment_count=Moment.comment_count + 1)
+    )
 
     await db.commit()
     await db.refresh(comment)
@@ -396,15 +466,22 @@ async def delete_moment_comment(
     if comment.author_id != current_user.id:
         return ServiceResponse(success=False, error={"code": "FORBIDDEN", "message": "Not your comment"})
 
-    # Update comment count on the moment
+    # Verify moment exists (still present, not deleted)
     moment_result = await db.execute(
         select(Moment).where(Moment.id == moment_id, Moment.is_deleted.is_(False))
     )
     moment = moment_result.scalar_one_or_none()
-    if moment:
-        moment.comment_count = max(0, (moment.comment_count or 0) - 1)
 
     await db.delete(comment)
+
+    # Atomic comment count decrement — guard against going below 0
+    if moment:
+        await db.execute(
+            update(Moment)
+            .where(Moment.id == moment_id, Moment.comment_count > 0)
+            .values(comment_count=Moment.comment_count - 1)
+        )
+
     await db.commit()
 
     logger.info(f"Moment comment deleted: id={comment_id} moment_id={moment_id} by user={current_user.id}")

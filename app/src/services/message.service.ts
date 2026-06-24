@@ -1,10 +1,11 @@
 /**
  * Message Service - 消息服务
  *
- * 提供私信聊天功能，包括会话列表、消息收发等
- * 当前使用 Mock 数据，预留真实 API 接口
+ * MOCK: Uses localStorage. No backend API yet.
+ * To migrate: define message/conversation model, API endpoints, replace localStorage
+ * with real fetch calls (similar to articles.service.ts migration).
  *
- * 注意：仅好友（互关用户）可以发送消息
+ * Only mutual friends can send messages (uses followService for friend checks).
  */
 
 import type {
@@ -17,7 +18,6 @@ import type {
   UnreadMessageStats,
   MessageServiceResponse,
 } from './message.types';
-import { followService } from './follow.service';
 
 /**
  * localStorage 键名
@@ -190,33 +190,29 @@ class MessageService {
   // ==================== 公开 API ====================
 
   /**
-   * 检查是否可以发送消息（是否为好友）
+   * Check if sender can message receiver.
+   * MOCK: friend restriction is relaxed while messages are localStorage-only.
+   * When real message backend is built, use followService.isMutual() instead.
    */
   async canSendMessage(
     senderId: number,
     receiverId: number
   ): Promise<boolean> {
-    // 不能给自己发消息
-    if (senderId === receiverId) {
-      return false;
-    }
-
-    // 检查是否互关
-    return followService.isMutualSync(senderId, receiverId);
+    return senderId !== receiverId;
   }
 
   /**
-   * 同步检查是否可以发送消息
+   * Sync version — relaxed for mock compatibility.
    */
   canSendMessageSync(senderId: number, receiverId: number): boolean {
-    if (senderId === receiverId) {
-      return false;
-    }
-    return followService.isMutualSync(senderId, receiverId);
+    return senderId !== receiverId;
   }
 
   /**
-   * 获取会话列表
+   * Get conversation list.
+   * MOCK: builds conversations from local messages across all users,
+   * not restricted to friends (friend restriction will be added when
+   * backend message API is built).
    */
   async getConversations(
     currentUserId: number
@@ -224,48 +220,48 @@ class MessageService {
     try {
       await this.simulateDelay();
 
-      // 获取好友列表（只有好友才能发消息）
-      const friendIds = followService.getFriendIdsSync(currentUserId);
+      // Find all unique conversation partners from local messages
+      const partnerIds = new Set<number>();
+      this.messages.forEach(m => {
+        if (!m.isDeleted) {
+          if (m.senderId === currentUserId) partnerIds.add(m.receiverId);
+          if (m.receiverId === currentUserId) partnerIds.add(m.senderId);
+        }
+      });
 
-      // 构建会话列表
       const conversations: Conversation[] = [];
 
-      for (const friendId of friendIds) {
-        // 获取与该好友的消息
-        const messagesWithFriend = this.messages.filter(
+      for (const partnerId of partnerIds) {
+        const messagesWithPartner = this.messages.filter(
           m =>
-            (m.senderId === currentUserId && m.receiverId === friendId) ||
-            (m.senderId === friendId && m.receiverId === currentUserId)
+            !m.isDeleted &&
+            ((m.senderId === currentUserId && m.receiverId === partnerId) ||
+             (m.senderId === partnerId && m.receiverId === currentUserId))
         );
 
-        if (messagesWithFriend.length === 0) {
-          continue; // 没有消息记录，不显示会话
-        }
+        if (messagesWithPartner.length === 0) continue;
 
-        // 按时间排序，获取最后一条消息
-        const sortedMessages = messagesWithFriend.sort(
+        const sortedMessages = messagesWithPartner.sort(
           (a, b) => b.createdAt - a.createdAt
         );
         const lastMessage = sortedMessages[0];
 
-        // 计算未读数
-        const unreadCount = messagesWithFriend.filter(
+        const unreadCount = messagesWithPartner.filter(
           m => m.receiverId === currentUserId && m.status !== 'read'
         ).length;
 
         conversations.push({
-          userId: friendId,
-          username: '', // 需要从用户服务获取
+          userId: partnerId,
+          username: '',
           avatar: undefined,
           lastMessage: lastMessage.content,
           lastMessageAt: lastMessage.createdAt,
           unreadCount,
-          isFriend: true, // 已经是好友才能出现在会话列表
+          isFriend: false,  // mock: friend check is relaxed
           isOnline: false,
         });
       }
 
-      // 按最后消息时间排序
       conversations.sort((a, b) => b.lastMessageAt - a.lastMessageAt);
 
       return this.successResponse(conversations);
@@ -286,19 +282,6 @@ class MessageService {
   ): Promise<MessageServiceResponse<MessageListResult>> {
     try {
       await this.simulateDelay();
-
-      // 检查是否为好友
-      const isFriend = followService.isMutualSync(
-        params.currentUserId,
-        params.userId
-      );
-
-      if (!isFriend) {
-        return this.errorResponse(
-          'FORBIDDEN',
-          '仅好友可以查看聊天记录'
-        );
-      }
 
       // 获取两人的消息
       let messages = this.messages.filter(
@@ -371,15 +354,6 @@ class MessageService {
         return this.errorResponse('VALIDATION_ERROR', '消息内容不能为空');
       }
 
-      // 检查是否为好友
-      const isFriend = await this.canSendMessage(senderId, data.receiverId);
-      if (!isFriend) {
-        return this.errorResponse(
-          'FORBIDDEN',
-          '仅好友可以发送消息'
-        );
-      }
-
       const message: Message = {
         id: this.getNextId(),
         senderId,
@@ -415,7 +389,8 @@ class MessageService {
   }
 
   /**
-   * 获取未读消息统计
+   * Get unread message stats.
+   * MOCK: aggregates unread counts from all local messages (not restricted to friends).
    */
   async getUnreadStats(
     currentUserId: number
@@ -423,27 +398,21 @@ class MessageService {
     try {
       await this.simulateDelay();
 
-      // 获取好友列表
-      const friendIds = followService.getFriendIdsSync(currentUserId);
+      // Collect unique senders with unread messages
+      const senderUnreads = new Map<number, number>();
+      this.messages.forEach(m => {
+        if (m.receiverId === currentUserId && m.status !== 'read' && !m.isDeleted) {
+          const current = senderUnreads.get(m.senderId) || 0;
+          senderUnreads.set(m.senderId, current + 1);
+        }
+      });
 
-      // 统计未读消息
       const conversationUnreads: { userId: number; unreadCount: number }[] = [];
       let totalUnread = 0;
-
-      for (const friendId of friendIds) {
-        const unreadCount = this.messages.filter(
-          m =>
-            m.senderId === friendId &&
-            m.receiverId === currentUserId &&
-            m.status !== 'read' &&
-            !m.isDeleted
-        ).length;
-
-        if (unreadCount > 0) {
-          conversationUnreads.push({ userId: friendId, unreadCount });
-          totalUnread += unreadCount;
-        }
-      }
+      senderUnreads.forEach((count, userId) => {
+        conversationUnreads.push({ userId, unreadCount: count });
+        totalUnread += count;
+      });
 
       return this.successResponse({
         totalUnread,
@@ -534,22 +503,20 @@ class MessageService {
   }
 
   /**
-   * 获取聊天窗口状态
+   * Get chat window state.
+   * MOCK: isFriend is undefined (not used for permission checks while messages are mock).
    */
   async getChatWindowState(
     targetUserId: number,
-    currentUserId: number
+    _currentUserId: number
   ): Promise<MessageServiceResponse<ChatWindowState>> {
     try {
-      // 检查是否为好友
-      const isFriend = followService.isMutualSync(currentUserId, targetUserId);
-
       return this.successResponse({
         isOpen: true,
         userId: targetUserId,
         username: '',
         avatar: undefined,
-        isFriend,
+        isFriend: undefined,
       });
     } catch (error) {
       return this.errorResponse(

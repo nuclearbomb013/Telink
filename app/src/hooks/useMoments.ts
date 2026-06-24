@@ -6,7 +6,6 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { momentService } from '@/services/moment.service';
-import { followService } from '@/services/follow.service';
 import type {
   Moment,
   GetMomentsParams,
@@ -80,7 +79,6 @@ interface UseMomentsParams {
  * ```
  */
 export function useMoments({
-  currentUserId,
   targetUserId,
   followingOnly = false,
   sortBy = 'newest',
@@ -94,14 +92,6 @@ export function useMoments({
   const [error, setError] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-
-  /**
-   * 获取关注的用户 ID 列表
-   */
-  const getFollowingIds = useCallback((): number[] => {
-    if (!currentUserId) return [];
-    return followService.getFollowingIdsSync(currentUserId);
-  }, [currentUserId]);
 
   /**
    * 加载动态列表
@@ -122,14 +112,8 @@ export function useMoments({
       followingOnly,
     };
 
-    const followingIds = getFollowingIds();
-
     try {
-      const response = await momentService.getMoments(
-        params,
-        currentUserId,
-        followingIds
-      );
+      const response = await momentService.getMoments(params);
 
       if (response.success && response.data) {
         const { moments: newMoments, hasMore: more, total: totalCount } = response.data;
@@ -152,7 +136,7 @@ export function useMoments({
       setIsLoading(false);
       setIsLoadingMore(false);
     }
-  }, [currentUserId, targetUserId, followingOnly, sortBy, limit, getFollowingIds]);
+  }, [targetUserId, followingOnly, sortBy, limit]);
 
   /**
    * 初始化加载

@@ -109,10 +109,8 @@ const FollowButton = ({
         const response = await followService.follow(currentUserId, targetUserId);
         if (response.success) {
           setIsFollowing(true);
-          // 检查是否变成互关
-          const mutual = followService.isMutualSync(currentUserId, targetUserId);
-          setIsMutual(mutual);
-          onFollowChange?.(true, mutual);
+          // Mutual status will be refreshed on next status fetch
+          onFollowChange?.(true, false);
         }
       }
     } catch (error) {

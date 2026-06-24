@@ -47,15 +47,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const initializeAuth = async () => {
     try {
-      // P1-6: Verify token validity by calling /auth/me
-      // This catches expired/revoked tokens and disabled users
+      // P1-5: Auth state machine — unknown -> authenticated | guest
+      // Never trust cached user; always verify with backend
       const localUser = authService.getCurrentUser();
-      if (localUser) {
-        // Set local user first for immediate UI render
-        setCurrentUser(localUser);
-        setIsAuthenticated(true);
 
-        // Then verify with backend
+      if (localUser) {
         try {
           // If access token is not in memory (page refresh), try to refresh it first
           // via the HttpOnly cookie before calling /auth/me
@@ -71,18 +67,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setCurrentUser(response.data);
             setIsAuthenticated(true);
           } else {
-            // Token invalid - clear local state
+            // Token invalid/expired — clear local state, enter guest
             console.warn('[Auth] Token validation failed, clearing state');
+            authService.logout();
+            localStorage.removeItem('techink_current_user');
             setCurrentUser(null);
             setIsAuthenticated(false);
           }
         } catch {
-          // Backend may be unavailable, keep local state as fallback
-          console.warn('[Auth] Backend unavailable during token validation');
+          // Backend unavailable — do NOT fall back to cached user
+          console.warn('[Auth] Backend unavailable during initialization — entering guest mode');
+          authService.logout();
+          localStorage.removeItem('techink_current_user');
+          setCurrentUser(null);
+          setIsAuthenticated(false);
         }
+      } else {
+        // No cached user — guest state
+        setCurrentUser(null);
+        setIsAuthenticated(false);
       }
     } catch {
-      console.error('Auth initialization failed');
+      console.error('[Auth] Initialization failed, entering guest mode');
+      setCurrentUser(null);
+      setIsAuthenticated(false);
     } finally {
       setLoading(false);
     }

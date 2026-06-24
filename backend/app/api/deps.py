@@ -19,11 +19,14 @@ security = HTTPBearer(auto_error=False)
 
 
 async def get_db() -> Generator:
-    """Get database session dependency."""
+    """Get database session dependency.
+
+    Yields a session with no auto-commit. Each route that writes must call
+    `await db.commit()` explicitly. On exception, the session is rolled back.
+    """
     async with async_session_maker() as session:
         try:
             yield session
-            await session.commit()
         except Exception:
             await session.rollback()
             raise

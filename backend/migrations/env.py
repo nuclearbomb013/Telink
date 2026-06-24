@@ -23,6 +23,7 @@ from app.models.comment import Comment, CommentLike  # noqa: E402, F401
 from app.models.moment import Moment, MomentLike, MomentComment  # noqa: E402, F401
 from app.models.notification import Notification  # noqa: E402, F401
 from app.models.token_blacklist import TokenBlacklist  # noqa: E402, F401
+from app.models.follow import Follow  # noqa: E402, F401
 
 target_metadata = Base.metadata
 

@@ -4,6 +4,7 @@ Test Configuration
 
 from collections.abc import AsyncGenerator
 
+import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
@@ -12,6 +13,14 @@ import app.models  # noqa: F401 - ensure all model metadata is registered
 from app.api.deps import get_db
 from app.db.session import Base
 from app.main import create_app
+from app.core.rate_limit import rate_limiter
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """Reset the global rate limiter before each test to prevent 429 interference."""
+    rate_limiter._requests.clear()
+    yield
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
@@ -57,10 +66,11 @@ async def test_app(
         async with test_session_maker() as session:
             try:
                 yield session
-                await session.commit()
             except Exception:
                 await session.rollback()
                 raise
+            finally:
+                await session.close()
 
     app.dependency_overrides[get_db] = override_get_db
     try:
