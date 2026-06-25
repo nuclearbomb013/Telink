@@ -44,10 +44,10 @@
 
 | | Detail |
 |---|---|
-| **Frontend service** | `services/user.service.ts` |
+| **Frontend service** | `services/user.service.ts` (✅ real API) |
 | **Backend file** | `api/v1/users.py` |
 | **DB table** | `users` |
-| **Status** | ✅ Backend API |
+| **Status** | ✅ Backend API — frontend fully migrated from localStorage mock |
 
 **Endpoints:**
 | Method | Path | Auth | Description |
@@ -233,13 +233,35 @@
 
 | | Detail |
 |---|---|
-| **Frontend service** | `services/message.service.ts` (📦 localStorage/mock) |
-| **Backend file** | None yet |
-| **Status** | 📦 **Mock** — localStorage only, no backend API. Mock isolation: friend checks relaxed; all local messages are accessible regardless of follow status. Not a real permission system. |
+| **Frontend service** | `services/message.service.ts` |
+| **Backend file** | `api/v1/messages.py` |
+| **DB tables** | `messages` |
+| **Status** | ✅ Backend API |
+
+**Endpoints:**
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/messages/conversations` | Bearer | List user's conversations |
+| GET | `/messages/conversations/{user_id}` | Bearer | Get messages with user (auto-marks read) |
+| POST | `/messages` | Bearer | Send a message |
+| PUT | `/messages/{id}/read` | Bearer | Mark single message read |
+| PUT | `/messages/conversations/{user_id}/read` | Bearer | Mark all messages from user read |
+| GET | `/messages/unread-count` | Bearer | Get total + per-conversation unread count |
+| DELETE | `/messages/{id}` | Bearer | Soft-delete own message |
 
 ---
 
-## 11. Upload (`/upload`)
+## 11. News (`/news`)
+
+| | Detail |
+|---|---|
+| **Frontend service** | `services/news.service.ts` → `services/news.mock.ts` |
+| **Backend file** | None yet |
+| **Status** | 📦 **Demo** — hardcoded sample data in `news.mock.ts`. No backend. Explicitly isolated from production services. |
+
+---
+
+## 12. Upload (`/upload`)
 
 | | Detail |
 |---|---|

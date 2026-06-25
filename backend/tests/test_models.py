@@ -72,3 +72,44 @@ class TestCommentLikeUnique:
             if isinstance(arg, UniqueConstraint):
                 assert arg.name is not None, "UniqueConstraint should have explicit name"
                 assert "comment_likes" in arg.name.lower() or "user_comment" in arg.name.lower()
+
+
+class TestFollowConstraints:
+    """Follow model should enforce uniqueness and no self-follow at DB level."""
+
+    def test_follow_has_unique_pair_and_no_self_check(self):
+        from sqlalchemy import CheckConstraint, UniqueConstraint
+        from app.models.follow import Follow
+
+        table_args = Follow.__table_args__
+        assert any(
+            isinstance(arg, UniqueConstraint)
+            and {"follower_id", "following_id"} == {col.name for col in arg.columns}
+            for arg in table_args
+        )
+        assert any(
+            isinstance(arg, CheckConstraint)
+            and arg.name == "ck_follows_no_self"
+            for arg in table_args
+        )
+
+
+class TestMigrationModelConsistency:
+    """Model metadata should match explicit migration contracts for key tables."""
+
+    def test_favorite_table_name_matches_migration(self):
+        from app.models.favorite import Favorite
+
+        assert Favorite.__tablename__ == "user_favorites"
+
+    def test_article_slug_is_unique_in_model(self):
+        from app.models.article import Article
+
+        assert Article.__table__.c.slug.unique is True
+
+    def test_message_indexes_match_query_patterns(self):
+        from app.models.message import Message
+
+        index_names = {idx.name for idx in Message.__table__.indexes}
+        assert "ix_messages_sender_receiver" in index_names
+        assert "ix_messages_receiver_sender" in index_names

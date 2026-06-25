@@ -164,7 +164,7 @@ class TestMomentsAPI:
 
     @pytest.mark.asyncio
     async def test_like_idempotent(self, test_app, test_session_maker):
-        """Like -> unlike -> like toggle works correctly."""
+        """Like (POST) is idempotent, unlike (DELETE) is idempotent."""
         user = await _create_test_user(test_session_maker)
         try:
             transport = ASGITransport(app=test_app)
@@ -177,8 +177,18 @@ class TestMomentsAPI:
                 assert r.json()["data"]["liked"] is True
                 assert r.json()["data"]["likes"] == 1
 
-                # Unlike
+                # Like again (idempotent)
                 r = await client.post(f"/api/v1/moments/{mid}/like", headers=_token(user))
+                assert r.json()["data"]["liked"] is True
+                assert r.json()["data"]["likes"] == 1
+
+                # Unlike
+                r = await client.delete(f"/api/v1/moments/{mid}/like", headers=_token(user))
+                assert r.json()["data"]["liked"] is False
+                assert r.json()["data"]["likes"] == 0
+
+                # Unlike again (idempotent)
+                r = await client.delete(f"/api/v1/moments/{mid}/like", headers=_token(user))
                 assert r.json()["data"]["liked"] is False
                 assert r.json()["data"]["likes"] == 0
 
@@ -304,6 +314,115 @@ class TestMomentsFollowingOnly:
             await _cleanup_user(test_session_maker, uB.id)
             await _cleanup_user(test_session_maker, uC.id)
 
+
+class TestMomentDetailVisibilityAndActions:
+    """Detail, like, and comment endpoints must enforce the same visibility rules."""
+
+    @pytest.mark.asyncio
+    async def test_detail_respects_public_followers_and_private_visibility(self, test_app, test_session_maker):
+        author = await _create_test_user(test_session_maker)
+        follower = await _create_test_user(test_session_maker)
+        stranger = await _create_test_user(test_session_maker)
+        try:
+            transport = ASGITransport(app=test_app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                public = await client.post(
+                    "/api/v1/moments",
+                    json={"content": "public detail", "visibility": "public"},
+                    headers=_token(author),
+                )
+                followers = await client.post(
+                    "/api/v1/moments",
+                    json={"content": "followers detail", "visibility": "followers"},
+                    headers=_token(author),
+                )
+                private = await client.post(
+                    "/api/v1/moments",
+                    json={"content": "private detail", "visibility": "private"},
+                    headers=_token(author),
+                )
+                public_id = public.json()["data"]["id"]
+                followers_id = followers.json()["data"]["id"]
+                private_id = private.json()["data"]["id"]
+
+                await client.post(f"/api/v1/follow/{author.id}", headers=_token(follower))
+
+                assert (await client.get(f"/api/v1/moments/{public_id}")).json()["success"] is True
+                assert (await client.get(f"/api/v1/moments/{followers_id}", headers=_token(follower))).json()["success"] is True
+                assert (await client.get(f"/api/v1/moments/{followers_id}", headers=_token(stranger))).json()["error"]["code"] == "NOT_FOUND"
+                assert (await client.get(f"/api/v1/moments/{private_id}", headers=_token(author))).json()["success"] is True
+                assert (await client.get(f"/api/v1/moments/{private_id}", headers=_token(follower))).json()["error"]["code"] == "NOT_FOUND"
+        finally:
+            await _cleanup_user(test_session_maker, author.id)
+            await _cleanup_user(test_session_maker, follower.id)
+            await _cleanup_user(test_session_maker, stranger.id)
+
+    @pytest.mark.asyncio
+    async def test_invisible_moment_cannot_be_liked_or_commented_on(self, test_app, test_session_maker):
+        author = await _create_test_user(test_session_maker)
+        stranger = await _create_test_user(test_session_maker)
+        try:
+            transport = ASGITransport(app=test_app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                r = await client.post(
+                    "/api/v1/moments",
+                    json={"content": "hidden", "visibility": "private"},
+                    headers=_token(author),
+                )
+                mid = r.json()["data"]["id"]
+
+                r = await client.post(f"/api/v1/moments/{mid}/like", headers=_token(stranger))
+                assert r.json()["success"] is False
+                assert r.json()["error"]["code"] == "NOT_FOUND"
+
+                r = await client.post(
+                    f"/api/v1/moments/{mid}/comments",
+                    json={"content": "nope"},
+                    headers=_token(stranger),
+                )
+                assert r.json()["success"] is False
+                assert r.json()["error"]["code"] == "NOT_FOUND"
+
+                r = await client.get(f"/api/v1/moments/{mid}", headers=_token(author))
+                assert r.json()["data"]["likes"] == 0
+                assert r.json()["data"]["comment_count"] == 0
+        finally:
+            await _cleanup_user(test_session_maker, author.id)
+            await _cleanup_user(test_session_maker, stranger.id)
+
+    @pytest.mark.asyncio
+    async def test_reply_to_id_must_belong_to_same_moment(self, test_app, test_session_maker):
+        author = await _create_test_user(test_session_maker)
+        commenter = await _create_test_user(test_session_maker)
+        try:
+            transport = ASGITransport(app=test_app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                r = await client.post("/api/v1/moments", json={"content": "m1"}, headers=_token(author))
+                m1 = r.json()["data"]["id"]
+                r = await client.post("/api/v1/moments", json={"content": "m2"}, headers=_token(author))
+                m2 = r.json()["data"]["id"]
+
+                r = await client.post(
+                    f"/api/v1/moments/{m1}/comments",
+                    json={"content": "on m1"},
+                    headers=_token(commenter),
+                )
+                comment_id = r.json()["data"]["id"]
+
+                r = await client.post(
+                    f"/api/v1/moments/{m2}/comments",
+                    json={"content": "cross reply", "reply_to_id": comment_id},
+                    headers=_token(commenter),
+                )
+                assert r.json()["success"] is False
+                assert r.json()["error"]["code"] == "NOT_FOUND"
+
+                r = await client.get(f"/api/v1/moments/{m2}", headers=_token(author))
+                assert r.json()["data"]["comment_count"] == 0
+        finally:
+            await _cleanup_user(test_session_maker, author.id)
+            await _cleanup_user(test_session_maker, commenter.id)
+
     @pytest.mark.asyncio
     async def test_private_not_visible_to_follower(self, test_app, test_session_maker):
         """Followers cannot see private moments via following_only or normal feed."""
@@ -419,7 +538,7 @@ class TestMomentsCounters:
 
     @pytest.mark.asyncio
     async def test_unlike_does_not_go_below_zero(self, test_app, test_session_maker):
-        """Unlike on a zero-liked moment should not produce negative count."""
+        """Unlike (DELETE) on zero-liked moment doesn't go below 0."""
         user = await _create_test_user(test_session_maker)
         try:
             transport = ASGITransport(app=test_app)
@@ -432,29 +551,25 @@ class TestMomentsCounters:
                 mid = r.json()["data"]["id"]
                 assert r.json()["data"]["likes"] == 0
 
+                # Unlike on zero: no-op, still 0
+                r = await client.delete(f"/api/v1/moments/{mid}/like", headers=_token(user))
+                assert r.json()["data"]["likes"] == 0
+
                 # Like -> 1
                 r = await client.post(f"/api/v1/moments/{mid}/like", headers=_token(user))
                 assert r.json()["data"]["liked"] is True
                 assert r.json()["data"]["likes"] == 1
 
                 # Unlike -> 0
-                r = await client.post(f"/api/v1/moments/{mid}/like", headers=_token(user))
+                r = await client.delete(f"/api/v1/moments/{mid}/like", headers=_token(user))
                 assert r.json()["data"]["liked"] is False
                 assert r.json()["data"]["likes"] == 0
 
-                # Unlike on zero-liked moment -> no-op (rowcount=0, likes stays >=0)
-                # The delete with WHERE likes>0 guard prevents going below 0
-                r = await client.post(f"/api/v1/moments/{mid}/like", headers=_token(user))
-                assert r.json()["data"]["liked"] is True  # Re-likes (no existing row)
-                assert r.json()["data"]["likes"] == 1
-
-                # Now unlike to go back to 0 and verify it can't go negative via delete
-                r = await client.post(f"/api/v1/moments/{mid}/like", headers=_token(user))
+                # Unlike again: no-op, still 0
+                r = await client.delete(f"/api/v1/moments/{mid}/like", headers=_token(user))
                 assert r.json()["data"]["likes"] == 0
-                # Force another delete-like (would decrement if guard absent)
-                r = await client.post(f"/api/v1/moments/{mid}/like", headers=_token(user))
-                assert r.json()["data"]["liked"] is True
-                # Verify we never went below 0
+
+                # Confirm we never went below 0
                 assert r.json()["data"]["likes"] >= 0
         finally:
             await _cleanup_user(test_session_maker, user.id)

@@ -54,7 +54,7 @@ class NotificationListResult(BaseModel):
     unread_count: int
 
 
-class UnreadCountResponse(BaseModel):
+class NotificationUnreadCountResponse(BaseModel):
     """Unread notification count."""
 
     count: int

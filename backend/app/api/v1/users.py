@@ -3,6 +3,7 @@ User API Endpoints
 """
 
 from typing import Optional
+from datetime import timedelta
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -10,6 +11,7 @@ from sqlalchemy import select, func
 from app.api.deps import get_db, get_current_user
 from app.models.user import User, UserRole
 from app.models.follow import Follow
+from app.models.post import Post
 from app.models.base import utcnow_naive
 from app.schemas import (
     ServiceResponse,
@@ -17,11 +19,19 @@ from app.schemas import (
     UserPublic,
     UserUpdate,
     UserStats,
+    UserSummaryStats,
     UserListResult
 )
 from app.core.security import validate_username
 
 router = APIRouter(prefix="/users", tags=["Users"])
+
+
+def _role_str(role) -> str:
+    """Normalize User.role to string, regardless of whether it's an enum or str."""
+    if hasattr(role, "value"):
+        return str(role.value)
+    return str(role)
 
 
 @router.get("/list", response_model=ServiceResponse[UserListResult])
@@ -68,7 +78,7 @@ async def list_users(
                     username=u.username,
                     avatar=u.avatar,
                     bio=u.bio,
-                    role=str(u.role.value) if hasattr(u.role, 'value') else str(u.role),
+                    role=_role_str(u.role),
                     post_count=u.post_count,
                     comment_count=u.comment_count,
                     like_count=u.like_count,
@@ -166,7 +176,7 @@ async def get_user(
             username=user.username,
             avatar=user.avatar,
             bio=user.bio,
-            role=user.role,
+            role=_role_str(user.role),
             post_count=user.post_count,
             comment_count=user.comment_count,
             like_count=user.like_count,
@@ -202,7 +212,7 @@ async def get_user_by_username(
             username=user.username,
             avatar=user.avatar,
             bio=user.bio,
-            role=user.role,
+            role=_role_str(user.role),
             post_count=user.post_count,
             comment_count=user.comment_count,
             like_count=user.like_count,
@@ -256,7 +266,7 @@ async def update_user(
         )
 
     # Update fields
-    if update_data.username:
+    if update_data.username is not None:
         # Validate username
         is_valid, error_msg = validate_username(update_data.username)
         if not is_valid:
@@ -301,11 +311,47 @@ async def update_user(
             email=user.email,
             avatar=user.avatar,
             bio=user.bio,
-            role=user.role,
+            role=_role_str(user.role),
             post_count=user.post_count,
             comment_count=user.comment_count,
             like_count=user.like_count,
             created_at=int(user.created_at.timestamp() * 1000)
+        )
+    )
+
+
+@router.get("/stats/summary", response_model=ServiceResponse[UserSummaryStats])
+async def get_user_summary_stats(
+    db: AsyncSession = Depends(get_db)
+):
+    """Get aggregated global user statistics (server-side computation)."""
+    now_dt = utcnow_naive()
+    week_ago_dt = now_dt - timedelta(days=7)
+    month_ago_dt = now_dt - timedelta(days=30)
+
+    total_result = await db.execute(select(func.count()).select_from(User))
+    total = total_result.scalar() or 0
+
+    week_result = await db.execute(
+        select(func.count()).select_from(User).where(
+            User.created_at >= week_ago_dt
+        )
+    )
+    new_week = week_result.scalar() or 0
+
+    month_result = await db.execute(
+        select(func.count()).select_from(User).where(
+            User.created_at >= month_ago_dt
+        )
+    )
+    new_month = month_result.scalar() or 0
+
+    return ServiceResponse(
+        success=True,
+        data=UserSummaryStats(
+            total_users=total,
+            new_users_this_week=new_week,
+            new_users_this_month=new_month,
         )
     )
 
@@ -342,6 +388,15 @@ async def get_user_stats(
     )
     following_count = following_result.scalar() or 0
 
+    # Get aggregate post likes and views
+    post_stats_result = await db.execute(
+        select(
+            func.coalesce(func.sum(Post.likes), 0),
+            func.coalesce(func.sum(Post.views), 0),
+        ).where(Post.author_id == user_id, Post.is_deleted.is_(False))
+    )
+    total_post_likes, total_post_views = post_stats_result.one()
+
     return ServiceResponse(
         success=True,
         data=UserStats(
@@ -350,5 +405,7 @@ async def get_user_stats(
             like_count=user.like_count,
             following_count=following_count,
             follower_count=follower_count,
+            total_post_likes=total_post_likes,
+            total_post_views=total_post_views,
         )
     )

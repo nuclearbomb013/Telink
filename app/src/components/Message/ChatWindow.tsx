@@ -129,12 +129,20 @@ const ChatWindow = ({
   const inputRef = useRef<HTMLInputElement>(null);
 
   /**
-   * 检查是否为好友
+   * 检查是否为好友 — uses real backend follow status API.
    */
   useEffect(() => {
     const checkFriend = async () => {
-      const mutual = followService.isMutualSync(currentUser.id, targetUserId);
-      setIsFriend(mutual);
+      try {
+        const response = await followService.getFollowStatus(targetUserId, currentUser.id);
+        if (response.success && response.data) {
+          setIsFriend(response.data.isMutual);
+        } else {
+          setIsFriend(false);
+        }
+      } catch {
+        setIsFriend(false);
+      }
     };
     checkFriend();
   }, [currentUser.id, targetUserId]);

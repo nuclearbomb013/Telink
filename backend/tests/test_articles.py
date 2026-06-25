@@ -140,3 +140,133 @@ class TestArticlesAPI:
                 assert r.json()["success"] is True
         finally:
             await _cleanup(test_session_maker, user)
+
+    @pytest.mark.asyncio
+    async def test_non_author_cannot_update_or_delete_article(self, test_app, test_session_maker):
+        author = await _create_user(test_session_maker)
+        other = await _create_user(test_session_maker)
+        try:
+            transport = ASGITransport(app=test_app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                r = await client.post("/api/v1/articles", json={
+                    "title": "Protected", "content": "original", "category": "backend",
+                }, headers=_token(author))
+                aid = r.json()["data"]["id"]
+
+                r = await client.put(
+                    f"/api/v1/articles/{aid}",
+                    json={"title": "stolen"},
+                    headers=_token(other),
+                )
+                assert r.json()["success"] is False
+                assert r.json()["error"]["code"] == "FORBIDDEN"
+
+                r = await client.delete(f"/api/v1/articles/{aid}", headers=_token(other))
+                assert r.json()["success"] is False
+                assert r.json()["error"]["code"] == "FORBIDDEN"
+
+                r = await client.get(f"/api/v1/articles/{aid}", headers=_token(author))
+                assert r.json()["success"] is True
+                assert r.json()["data"]["title"] == "Protected"
+        finally:
+            await _cleanup(test_session_maker, author, other)
+
+
+class TestArticleDetailResponse:
+    """Verify article detail (slug/ID) returns correct tags and consistent view behavior."""
+
+    @pytest.mark.asyncio
+    async def test_slug_detail_returns_tags(self, test_app, test_session_maker):
+        """Published article by slug must include its tags."""
+        user = await _create_user(test_session_maker)
+        try:
+            transport = ASGITransport(app=test_app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                r = await client.post("/api/v1/articles", json={
+                    "title": "Tagged Article", "content": "Content here",
+                    "category": "frontend", "tags": ["vue", "typescript"],
+                }, headers=_token(user))
+                aid = r.json()["data"]["id"]
+                slug = r.json()["data"]["slug"]
+
+                await client.post(f"/api/v1/articles/{aid}/publish", headers=_token(user))
+
+                r = await client.get(f"/api/v1/articles/slug/{slug}")
+                assert r.status_code == 200
+                data = r.json()
+                assert data["success"] is True
+                assert "tags" in data["data"]
+                assert sorted(data["data"]["tags"]) == ["typescript", "vue"]
+        finally:
+            await _cleanup(test_session_maker, user)
+
+    @pytest.mark.asyncio
+    async def test_id_detail_returns_tags(self, test_app, test_session_maker):
+        """Published article by ID must include its tags."""
+        user = await _create_user(test_session_maker)
+        try:
+            transport = ASGITransport(app=test_app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                r = await client.post("/api/v1/articles", json={
+                    "title": "ID Article", "content": "Content here",
+                    "category": "backend", "tags": ["python", "fastapi"],
+                }, headers=_token(user))
+                aid = r.json()["data"]["id"]
+
+                await client.post(f"/api/v1/articles/{aid}/publish", headers=_token(user))
+
+                r = await client.get(f"/api/v1/articles/{aid}")
+                assert r.status_code == 200
+                data = r.json()
+                assert data["success"] is True
+                assert "tags" in data["data"]
+                assert sorted(data["data"]["tags"]) == ["fastapi", "python"]
+        finally:
+            await _cleanup(test_session_maker, user)
+
+    @pytest.mark.asyncio
+    async def test_slug_view_increment(self, test_app, test_session_maker):
+        """Slug endpoint increments views on each public read."""
+        user = await _create_user(test_session_maker)
+        try:
+            transport = ASGITransport(app=test_app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                r = await client.post("/api/v1/articles", json={
+                    "title": "ViewCount", "content": "Content",
+                    "category": "frontend",
+                }, headers=_token(user))
+                aid = r.json()["data"]["id"]
+                slug = r.json()["data"]["slug"]
+                await client.post(f"/api/v1/articles/{aid}/publish", headers=_token(user))
+
+                r = await client.get(f"/api/v1/articles/slug/{slug}")
+                assert r.json()["data"]["views"] >= 1
+                views_after_first = r.json()["data"]["views"]
+
+                r = await client.get(f"/api/v1/articles/slug/{slug}")
+                assert r.json()["data"]["views"] == views_after_first + 1
+        finally:
+            await _cleanup(test_session_maker, user)
+
+    @pytest.mark.asyncio
+    async def test_id_view_increment(self, test_app, test_session_maker):
+        """ID endpoint also increments views on public read (consistency)."""
+        user = await _create_user(test_session_maker)
+        try:
+            transport = ASGITransport(app=test_app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                r = await client.post("/api/v1/articles", json={
+                    "title": "IDViewCount", "content": "Content",
+                    "category": "backend",
+                }, headers=_token(user))
+                aid = r.json()["data"]["id"]
+                await client.post(f"/api/v1/articles/{aid}/publish", headers=_token(user))
+
+                r = await client.get(f"/api/v1/articles/{aid}")
+                assert r.json()["data"]["views"] >= 1
+                views_after_first = r.json()["data"]["views"]
+
+                r = await client.get(f"/api/v1/articles/{aid}")
+                assert r.json()["data"]["views"] == views_after_first + 1
+        finally:
+            await _cleanup(test_session_maker, user)

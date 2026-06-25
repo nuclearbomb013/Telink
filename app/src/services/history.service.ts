@@ -1,5 +1,14 @@
 /**
- * History Service - 浏览历史记录 (纯 localStorage)
+ * History Service - 浏览历史记录
+ *
+ * CLIENT-SIDE ONLY: Stores browsing history in localStorage.
+ * This is a UI convenience feature, NOT a business data source.
+ * History is per-device and does NOT sync across devices or browsers.
+ *
+ * Do NOT use this for:
+ *   - Permission checks
+ *   - Recommendations (without explicit user opt-in)
+ *   - Backend statistics
  */
 
 const HISTORY_KEY_PREFIX = 'techink_history';

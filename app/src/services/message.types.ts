@@ -71,8 +71,8 @@ export interface ConversationListResult {
 export interface GetMessagesParams {
   /** 对方用户 ID */
   userId: number;
-  /** 当前用户 ID */
-  currentUserId: number;
+  /** 当前用户 ID（可选 — 后端通过认证会话确定当前用户） */
+  currentUserId?: number;
   /** 游标（用于分页，消息 ID） */
   beforeId?: number;
   /** 每页数量 */

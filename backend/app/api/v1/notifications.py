@@ -15,7 +15,7 @@ from app.schemas import (
     NotificationCreate,
     NotificationResponse,
     NotificationListResult,
-    UnreadCountResponse
+    NotificationUnreadCountResponse
 )
 
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
@@ -269,7 +269,7 @@ async def delete_notification(
     )
 
 
-@router.get("/unread-count", response_model=ServiceResponse[UnreadCountResponse])
+@router.get("/unread-count", response_model=ServiceResponse[NotificationUnreadCountResponse])
 async def get_unread_count(
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
@@ -299,5 +299,5 @@ async def get_unread_count(
 
     return ServiceResponse(
         success=True,
-        data=UnreadCountResponse(count=count)
+        data=NotificationUnreadCountResponse(count=count)
     )

@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from app.api.deps import get_db, get_current_active_user, get_current_user_optional
 from app.models.user import User
 from app.models.follow import Follow
+from app.models.moment import Moment
 from app.schemas.common import ServiceResponse
 from app.schemas.follow import (
     FollowStatusResponse,
@@ -38,9 +39,9 @@ async def _get_follow_counts(db: AsyncSession, user_id: int) -> tuple[int, int]:
     return followers, following
 
 
-async def _is_following_user(db: AsyncSession, follower_id: int, following_id: int) -> bool:
+async def _is_following_user(db: AsyncSession, follower_id: int | None, following_id: int) -> bool:
     """Check if follower_id follows following_id."""
-    if not follower_id:
+    if follower_id is None:
         return False
     result = await db.execute(
         select(Follow).where(
@@ -51,10 +52,25 @@ async def _is_following_user(db: AsyncSession, follower_id: int, following_id: i
     return result.scalar_one_or_none() is not None
 
 
+async def _batch_fetch_moment_counts(
+    db: AsyncSession, user_ids: list[int]
+) -> dict[int, int]:
+    """Batch-fetch non-deleted moment counts for a list of user IDs."""
+    if not user_ids:
+        return {}
+    result = await db.execute(
+        select(Moment.author_id, func.count())
+        .where(Moment.author_id.in_(user_ids), Moment.is_deleted.is_(False))
+        .group_by(Moment.author_id)
+    )
+    return {row[0]: row[1] for row in result.fetchall()}
+
+
 async def _build_follow_user_info(
     db: AsyncSession,
     user: User,
     current_user_id: int | None,
+    moment_counts: dict[int, int] | None = None,
 ) -> FollowUserInfo:
     """Build FollowUserInfo for a user, including current user's follow status."""
     followers, following = await _get_follow_counts(db, user.id)
@@ -66,6 +82,18 @@ async def _build_follow_user_info(
         if is_following:
             is_mutual = await _is_following_user(db, user.id, current_user_id)
 
+    # Use pre-fetched moment count when available (avoids N+1 queries in lists)
+    if moment_counts is not None:
+        moment_count = moment_counts.get(user.id, 0)
+    else:
+        moment_count_result = await db.execute(
+            select(func.count()).select_from(Moment).where(
+                Moment.author_id == user.id,
+                Moment.is_deleted.is_(False),
+            )
+        )
+        moment_count = moment_count_result.scalar() or 0
+
     return FollowUserInfo(
         id=user.id,
         username=user.username,
@@ -75,7 +103,7 @@ async def _build_follow_user_info(
         is_mutual=is_mutual,
         follower_count=followers,
         following_count=following,
-        moment_count=user.post_count or 0,
+        moment_count=moment_count,
     )
 
 
@@ -114,7 +142,15 @@ async def follow_user(
         await db.commit()
     except IntegrityError:
         await db.rollback()
-        # Already following — idempotent success
+        # Verify the error was a duplicate-pair unique constraint, not a missing FK.
+        # Re-fetch to confirm the target still exists and the relationship is present.
+        still_exists = await db.get(User, target_user_id)
+        if not still_exists:
+            return ServiceResponse(
+                success=False,
+                error={"code": "NOT_FOUND", "message": "User not found"},
+            )
+        # Unique constraint violated → already following, idempotent success
 
     return ServiceResponse(success=True, data={"message": "Following"})
 
@@ -227,10 +263,11 @@ async def get_following(
             select(User).where(User.id.in_(following_ids))
         )
         db_users = {u.id: u for u in result.scalars().all()}
+        moment_counts = await _batch_fetch_moment_counts(db, following_ids)
         for uid in following_ids:
             if uid in db_users:
                 users_info.append(
-                    await _build_follow_user_info(db, db_users[uid], current_user.id if current_user else None)
+                    await _build_follow_user_info(db, db_users[uid], current_user.id if current_user else None, moment_counts)
                 )
 
     has_more = (page * limit) < total
@@ -279,10 +316,11 @@ async def get_followers(
             select(User).where(User.id.in_(follower_ids))
         )
         db_users = {u.id: u for u in result.scalars().all()}
+        moment_counts = await _batch_fetch_moment_counts(db, follower_ids)
         for uid in follower_ids:
             if uid in db_users:
                 users_info.append(
-                    await _build_follow_user_info(db, db_users[uid], current_user.id if current_user else None)
+                    await _build_follow_user_info(db, db_users[uid], current_user.id if current_user else None, moment_counts)
                 )
 
     has_more = (page * limit) < total
@@ -337,10 +375,11 @@ async def get_friends(
             select(User).where(User.id.in_(friend_ids))
         )
         db_users = {u.id: u for u in result.scalars().all()}
+        moment_counts = await _batch_fetch_moment_counts(db, friend_ids)
         for uid in friend_ids:
             if uid in db_users:
                 users_info.append(
-                    await _build_follow_user_info(db, db_users[uid], current_user.id if current_user else None)
+                    await _build_follow_user_info(db, db_users[uid], current_user.id if current_user else None, moment_counts)
                 )
 
     has_more = (page * limit) < total

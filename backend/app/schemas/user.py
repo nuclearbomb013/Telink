@@ -132,6 +132,16 @@ class UserStats(BaseModel):
     like_count: int = 0
     following_count: int = 0
     follower_count: int = 0
+    total_post_likes: int = 0
+    total_post_views: int = 0
+
+
+class UserSummaryStats(BaseModel):
+    """Aggregated global user statistics (computed server-side)."""
+
+    total_users: int = 0
+    new_users_this_week: int = 0
+    new_users_this_month: int = 0
 
 
 class UserListResult(BaseModel):

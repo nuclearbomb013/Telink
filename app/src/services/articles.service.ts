@@ -85,21 +85,22 @@ async function fetchAllArticles(force = false): Promise<Article[]> {
     return _cachedArticles;
   }
 
-  // Fetch all pages to ensure client-side filters see the full dataset
+  // Fetch all pages to ensure client-side filters see the full dataset.
+  // If any page fails, throw — never cache incomplete data.
   const allArticles: Article[] = [];
   const pageSize = 100;
   let page = 1;
-  let hasMore = true;
+  let totalPages = 1;
 
-  while (hasMore) {
+  while (page <= totalPages) {
     const response = await articleApi.getArticles({ limit: pageSize, page });
-    if (response.success && response.data) {
-      allArticles.push(...response.data.articles.map(apiToArticle));
-      hasMore = page < response.data.total_pages;
-      page++;
-    } else {
-      break;
+    if (!response.success || !response.data) {
+      _cachedArticles = null; // Invalidate cache on failure
+      throw new Error(response.error?.message || 'Failed to fetch articles');
     }
+    allArticles.push(...response.data.articles.map(apiToArticle));
+    totalPages = response.data.total_pages;
+    page++;
   }
 
   _cachedArticles = allArticles;

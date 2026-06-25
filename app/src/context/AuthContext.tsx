@@ -48,7 +48,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const initializeAuth = async () => {
     try {
       // P1-5: Auth state machine — unknown -> authenticated | guest
-      // Never trust cached user; always verify with backend
+      // Never trust cached user; always verify with backend.
+      // BUT: transient network errors should NOT destroy the session.
       const localUser = authService.getCurrentUser();
 
       if (localUser) {
@@ -64,23 +65,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           const response = await authService.fetchCurrentUser();
           if (response.success && response.data) {
+            // Token verified — authenticated
             setCurrentUser(response.data);
             setIsAuthenticated(true);
           } else {
-            // Token invalid/expired — clear local state, enter guest
-            console.warn('[Auth] Token validation failed, clearing state');
-            authService.logout();
-            localStorage.removeItem('techink_current_user');
-            setCurrentUser(null);
-            setIsAuthenticated(false);
+            // Check if this is a NETWORK_ERROR (backend unreachable) vs auth failure
+            if (response.error?.code === 'NETWORK_ERROR') {
+              // Backend unreachable — keep cached user, stay authenticated
+              console.warn('[Auth] Backend unreachable, keeping cached session');
+              setCurrentUser(localUser);
+              setIsAuthenticated(true);
+            } else {
+              // Explicit auth failure (401 after refresh, token revoked, etc) — clear
+              console.warn('[Auth] Token validation failed, clearing state');
+              authService.logout();
+              localStorage.removeItem('techink_current_user');
+              setCurrentUser(null);
+              setIsAuthenticated(false);
+            }
           }
         } catch {
-          // Backend unavailable — do NOT fall back to cached user
-          console.warn('[Auth] Backend unavailable during initialization — entering guest mode');
-          authService.logout();
-          localStorage.removeItem('techink_current_user');
-          setCurrentUser(null);
-          setIsAuthenticated(false);
+          // Exception during fetch (network error) — keep cached user
+          console.warn('[Auth] Backend unreachable during initialization, keeping cached session');
+          setCurrentUser(localUser);
+          setIsAuthenticated(true);
         }
       } else {
         // No cached user — guest state
@@ -120,17 +128,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async () => {
     try {
-      // 清除认证服务状态 (this will trigger the global event that UserService listens to)
-      authService.logout();
+      // Clear auth service (async — calls backend + clears local state)
+      await authService.logout();
 
-      // 清除用户服务状态 - call explicitly to ensure complete cleanup
+      // Clear user service state
       userService.logout();
 
-      // 重置 local state after service states are cleared
+      // Reset local state after service states are cleared
       setCurrentUser(null);
       setIsAuthenticated(false);
 
-      // P2-20: Use StorageEvent for cross-tab sync
+      // Cross-tab sync
       window.dispatchEvent(new StorageEvent('storage', {
         key: 'techink_current_user',
         newValue: null
@@ -144,17 +152,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const refreshAuthStatus = async () => {
     try {
-      const user = authService.getCurrentUser();
-      if (user) {
-        setCurrentUser(user);
+      // Reload from backend, not from in-memory singleton (which may be stale
+      // if another tab changed localStorage).
+      // First try refreshing token, then verify with the backend.
+      if (!apiClient.getToken()) {
+        try {
+          const newToken = await apiClient.tryRefreshToken();
+          if (newToken) {
+            apiClient.setToken(newToken);
+          }
+        } catch {
+          // Token refresh failed due to network — don't clear session yet
+        }
+      }
+      const response = await authService.fetchCurrentUser();
+      if (response.success && response.data) {
+        setCurrentUser(response.data);
         setIsAuthenticated(true);
+      } else if (response.error?.code === 'NETWORK_ERROR') {
+        // Backend unreachable — keep current state
+        console.warn('[Auth] Backend unreachable during refresh, keeping current session');
       } else {
+        // Explicit auth failure (401, invalid token, etc) — clear
+        const localUser = authService.getCurrentUser();
+        if (localUser) {
+          authService.logout();
+          localStorage.removeItem('techink_current_user');
+        }
         setCurrentUser(null);
         setIsAuthenticated(false);
       }
     } catch {
-      setCurrentUser(null);
-      setIsAuthenticated(false);
+      // Exception during fetch (network error) — keep current state
+      console.warn('[Auth] Exception during refresh, keeping current session');
     }
   };
 

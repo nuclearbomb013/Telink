@@ -426,6 +426,8 @@ export interface UserStats {
   likeCount: number;
   followingCount: number;
   followerCount: number;
+  totalPostLikes: number;
+  totalPostViews: number;
 }
 
 function mapResponse<TInput, TOutput>(
@@ -451,6 +453,8 @@ interface UserStatsRaw {
   like_count: number;
   following_count: number;
   follower_count: number;
+  total_post_likes: number;
+  total_post_views: number;
 }
 
 /**
@@ -498,6 +502,8 @@ function transformUserStats(raw: UserStatsRaw): UserStats {
     likeCount: raw.like_count,
     followingCount: raw.following_count,
     followerCount: raw.follower_count,
+    totalPostLikes: raw.total_post_likes ?? 0,
+    totalPostViews: raw.total_post_views ?? 0,
   };
 }
 
@@ -539,6 +545,21 @@ export const userApi = {
   getStats: async (userId: number): Promise<ServiceResponse<UserStats>> => {
     const response = await apiClient.get<UserStatsRaw>(`/users/${userId}/stats`);
     return mapResponse(response, transformUserStats);
+  },
+
+  getSummaryStats: async (): Promise<ServiceResponse<{ totalUsers: number; newUsersThisWeek: number; newUsersThisMonth: number }>> => {
+    const response = await apiClient.get<{ total_users: number; new_users_this_week: number; new_users_this_month: number }>('/users/stats/summary');
+    if (response.success && response.data) {
+      return {
+        ...response,
+        data: {
+          totalUsers: response.data.total_users,
+          newUsersThisWeek: response.data.new_users_this_week,
+          newUsersThisMonth: response.data.new_users_this_month,
+        },
+      };
+    }
+    return { success: false, error: response.error, timestamp: response.timestamp };
   },
 };
 
@@ -1058,6 +1079,9 @@ export const momentApi = {
   getMoments: (params?: { page?: number; limit?: number; sort_by?: string; user_id?: number; following_only?: boolean }) =>
     apiClient.get<MomentListResult>('/moments', params as Record<string, string | number>),
 
+  getMomentById: (id: number) =>
+    apiClient.get<MomentData>(`/moments/${id}`),
+
   createMoment: (data: CreateMomentData) =>
     apiClient.post<MomentData>('/moments', data),
 
@@ -1067,8 +1091,11 @@ export const momentApi = {
   deleteMoment: (id: number) =>
     apiClient.delete(`/moments/${id}`),
 
-  toggleLike: (momentId: number) =>
+  like: (momentId: number) =>
     apiClient.post<{ liked: boolean; likes: number }>(`/moments/${momentId}/like`),
+
+  unlike: (momentId: number) =>
+    apiClient.delete<{ liked: boolean; likes: number }>(`/moments/${momentId}/like`),
 
   // Comment endpoints
   getComments: (momentId: number) =>
@@ -1265,6 +1292,105 @@ export const favoritesApi = {
     apiClient.get<FavoriteCheckResult>(
       `/favorites/check?content_type=${encodeURIComponent(contentType)}&content_id=${contentId}`
     ),
+};
+
+// ==================== 私信 (Messages) API ====================
+
+export interface MessageApiResponse {
+  id: number;
+  sender_id: number;
+  receiver_id: number;
+  content: string;
+  status: string;
+  is_read: boolean;
+  is_deleted: boolean;
+  created_at: number;
+}
+
+export interface ConversationApiResponse {
+  user_id: number;
+  username: string;
+  avatar?: string;
+  last_message: string;
+  last_message_at: number;
+  unread_count: number;
+}
+
+export interface ConversationListApiResponse {
+  conversations: ConversationApiResponse[];
+  total: number;
+}
+
+export interface MessageListApiResponse {
+  messages: MessageApiResponse[];
+  total: number;
+  page: number;
+  limit: number;
+  has_more: boolean;
+}
+
+export interface UnreadCountApiResponse {
+  total_unread: number;
+  conversation_unreads: Array<{ user_id: number; unread_count: number }>;
+}
+
+export const messageApi = {
+  getConversations: () =>
+    apiClient.get<ConversationListApiResponse>('/messages/conversations'),
+
+  getConversationMessages: (userId: number, params?: { page?: number; limit?: number; before_id?: number }) =>
+    apiClient.get<MessageListApiResponse>(
+      `/messages/conversations/${userId}`,
+      params as Record<string, string | number>
+    ),
+
+  send: (receiverId: number, content: string) =>
+    apiClient.post<MessageApiResponse>('/messages', { receiver_id: receiverId, content }),
+
+  markRead: (messageId: number) =>
+    apiClient.put(`/messages/${messageId}/read`),
+
+  markConversationRead: (userId: number) =>
+    apiClient.put(`/messages/conversations/${userId}/read`),
+
+  getUnreadCount: () =>
+    apiClient.get<UnreadCountApiResponse>('/messages/unread-count'),
+
+  deleteMessage: (messageId: number) =>
+    apiClient.delete(`/messages/${messageId}`),
+};
+
+// ==================== 资讯 (News) API ====================
+
+export interface NewsItemApi {
+  id: string;
+  title: string;
+  content: string;
+  excerpt?: string;
+  cover_image?: string;
+  category: string;
+  tags: string[];
+  hot_score: number;
+  views: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export const newsApi = {
+  getTimeline: (params?: { page?: number; limit?: number; category?: string }) =>
+    apiClient.get<{ items: NewsItemApi[]; total: number; page: number; limit: number; has_more: boolean }>(
+      '/news',
+      params as Record<string, string | number>,
+    ),
+
+  getHot: (limit?: number) =>
+    apiClient.get<{ items: NewsItemApi[]; keywords: string[] }>(
+      '/news/hot',
+      limit !== undefined ? { limit } as Record<string, string | number> : undefined,
+    ),
+
+  getById: (id: string) =>
+    apiClient.get<NewsItemApi>(`/news/${id}`),
 };
 
 export default apiClient;

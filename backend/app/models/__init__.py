@@ -12,6 +12,7 @@ from app.models.notification import Notification, NotificationType
 from app.models.token_blacklist import TokenBlacklist
 from app.models.favorite import Favorite
 from app.models.follow import Follow
+from app.models.message import Message
 
 __all__ = [
     "BaseModel",
@@ -31,6 +32,7 @@ __all__ = [
     "MomentComment",
     "Favorite",
     "Follow",
+    "Message",
     "Notification",
     "NotificationType",
     "TokenBlacklist",

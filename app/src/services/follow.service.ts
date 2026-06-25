@@ -32,7 +32,14 @@ function errorResponse(code: string, message: string, details?: unknown): Follow
 
 /**
  * Follow a user.
- * Note: followerId param kept for backward compatibility — backend uses current auth user.
+ *
+ * IMPORTANT: The `_followerId` parameter is IGNORED — the backend determines
+ * the follower from the authenticated session token. The `followerId` in the
+ * response may NOT match the caller-provided value. Always use the current
+ * user's ID (from auth context) as the authoritative follower identity.
+ *
+ * @param _followerId - Deprecated, kept for backward compatibility. IGNORED.
+ * @param followingId - The user to follow
  */
 async function follow(
   _followerId: number,
@@ -99,11 +106,12 @@ async function getFollowStatus(
 }
 
 /**
- * Check if two users are mutual follows.
+ * Check if the currently authenticated user and targetUserId are mutual follows.
+ * Uses the backend /follow/{targetUserId}/status endpoint which checks the auth session.
  */
-async function isMutual(_userId1: number, userId2: number): Promise<boolean> {
+async function isMutualWithCurrentUser(targetUserId: number): Promise<boolean> {
   try {
-    const response = await followApi.getStatus(userId2);
+    const response = await followApi.getStatus(targetUserId);
     return response.success && response.data?.is_mutual === true;
   } catch {
     return false;
@@ -292,7 +300,7 @@ export const followService = {
   follow,
   unfollow,
   getFollowStatus,
-  isMutual,
+  isMutualWithCurrentUser,
   getFollowingList,
   getFollowersList,
   getFriends,

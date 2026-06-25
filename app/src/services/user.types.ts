@@ -44,7 +44,8 @@ export interface UpdateUserData extends Partial<CreateUserData> {
  */
 export interface UserStats {
   totalUsers: number;
-  activeUsers: number;
+  /** Users who joined in the last 7 days (approximation — no backend last_active_at support yet). Limited to first 100 users from backend. */
+  newUsersThisWeek: number;
   newUsersThisMonth: number;
   topContributors: User[];
 }

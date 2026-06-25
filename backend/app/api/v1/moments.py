@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/moments", tags=["Moments"])
 
 
+# ──────────────────── Helpers ────────────────────
+
 def _moment_to_response(moment: Moment, current_user_id: int | None = None) -> MomentResponse:
     """Convert Moment model to response schema."""
     return MomentResponse(
@@ -44,6 +46,47 @@ def _moment_to_response(moment: Moment, current_user_id: int | None = None) -> M
         created_at=int(moment.created_at.timestamp() * 1000) if moment.created_at else 0,
         updated_at=int(moment.updated_at.timestamp() * 1000) if moment.updated_at else None,
     )
+
+
+async def _get_visible_moment_or_404(
+    db: AsyncSession,
+    moment_id: int,
+    current_user: User | None,
+) -> Moment:
+    """Fetch a non-deleted moment, enforcing the same visibility rules as get_moments.
+
+    - Anonymous: only public moments.
+    - Authenticated: public OR own (any visibility) OR followers-visible from
+      someone the current user follows.
+    - Returns the Moment on success, or raises a ServiceResponse-style error
+      (caller should return it directly).
+    """
+    result = await db.execute(
+        select(Moment).where(Moment.id == moment_id, Moment.is_deleted.is_(False))
+    )
+    moment = result.scalar_one_or_none()
+    if not moment:
+        return None  # caller returns NOT_FOUND
+
+    if moment.visibility == "public":
+        return moment
+    if current_user and moment.author_id == current_user.id:
+        return moment
+    if current_user and moment.visibility == "followers":
+        # Check if current_user follows the author
+        follow_result = await db.execute(
+            select(Follow).where(
+                Follow.follower_id == current_user.id,
+                Follow.following_id == moment.author_id,
+            )
+        )
+        if follow_result.scalar_one_or_none():
+            return moment
+
+    return None  # exists but not visible → treat as not found
+
+
+# ──────────────────── List / CRUD ────────────────────
 
 
 @router.get("", response_model=ServiceResponse[MomentListResult])
@@ -88,10 +131,6 @@ async def get_moments(
 
     # Visibility rules
     if current_user:
-        # Logged-in user can see:
-        #   - public moments
-        #   - their own moments (any visibility)
-        #   - followers-visible moments from users they follow
         visibility_conditions = [
             Moment.visibility == "public",
             Moment.author_id == current_user.id,
@@ -102,7 +141,6 @@ async def get_moments(
             )
         query = query.where(or_(*visibility_conditions))
     else:
-        # Anonymous users can only see public moments
         query = query.where(Moment.visibility == "public")
 
     # Following-only filter (only moments from followed users + self)
@@ -191,7 +229,6 @@ async def create_moment(
         visibility=data.visibility or "public",
         location=data.location,
     )
-    # Only set JSON fields when explicitly provided (avoid JSON null vs SQL NULL issues)
     if data.code_snippet is not None:
         moment.code_snippet = data.code_snippet.model_dump()
     if data.images is not None and len(data.images) > 0:
@@ -204,6 +241,50 @@ async def create_moment(
     return ServiceResponse(
         success=True,
         data=_moment_to_response(moment, current_user.id)
+    )
+
+
+@router.get("/{moment_id}", response_model=ServiceResponse[MomentResponse])
+async def get_moment_by_id(
+    moment_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_current_user_optional),
+):
+    """Get a single moment by ID, respecting visibility rules."""
+    moment = await _get_visible_moment_or_404(db, moment_id, current_user)
+    if not moment:
+        return ServiceResponse(success=False, error={"code": "NOT_FOUND", "message": "Moment not found"})
+
+    # Check if current user liked this moment
+    is_liked = False
+    if current_user:
+        like_result = await db.execute(
+            select(MomentLike).where(
+                MomentLike.moment_id == moment_id,
+                MomentLike.user_id == current_user.id,
+            )
+        )
+        is_liked = like_result.scalar_one_or_none() is not None
+
+    return ServiceResponse(
+        success=True,
+        data=MomentResponse(
+            id=moment.id,
+            author_id=moment.author_id,
+            author_name=moment.author_name,
+            author_avatar=moment.author_avatar,
+            content=moment.content,
+            content_type=moment.content_type or "text",
+            code_snippet=moment.code_snippet,
+            images=moment.images,
+            visibility=moment.visibility or "public",
+            location=moment.location,
+            likes=moment.likes,
+            comment_count=moment.comment_count,
+            is_liked=is_liked,
+            created_at=int(moment.created_at.timestamp() * 1000) if moment.created_at else 0,
+            updated_at=int(moment.updated_at.timestamp() * 1000) if moment.updated_at else None,
+        ),
     )
 
 
@@ -264,28 +345,54 @@ async def delete_moment(
     return ServiceResponse(success=True, data={"message": "Moment deleted"})
 
 
+# ──────────────────── Like endpoints ────────────────────
+
+
 @router.post("/{moment_id}/like", response_model=ServiceResponse)
-async def toggle_moment_like(
+async def like_moment(
     moment_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Toggle like on a moment. Uses atomic SQL updates to prevent race conditions.
-
-    - Uses delete() with rowcount to detect whether a like actually existed (avoid
-      concurrent double-unlike undercounting).
-    - Guards against likes going below 0.
-    - On IntegrityError (duplicate like), rolls back and treats as already-liked
-      without double-incrementing the counter.
-    """
-    # Verify moment exists
-    result = await db.execute(
-        select(Moment).where(Moment.id == moment_id, Moment.is_deleted.is_(False))
-    )
-    if not result.scalar_one_or_none():
+    """Like a moment. Idempotent — succeeds even if already liked."""
+    moment = await _get_visible_moment_or_404(db, moment_id, current_user)
+    if not moment:
         return ServiceResponse(success=False, error={"code": "NOT_FOUND", "message": "Moment not found"})
 
-    # Try to delete existing like
+    db.add(MomentLike(moment_id=moment_id, user_id=current_user.id))
+    try:
+        await db.flush()
+        await db.execute(
+            update(Moment)
+            .where(Moment.id == moment_id)
+            .values(likes=Moment.likes + 1)
+        )
+        liked = True
+    except IntegrityError:
+        await db.rollback()
+        # Already liked — idempotent, don't double-increment.
+        # Return directly; the session may be in an intermediate state after rollback.
+        result = await db.execute(select(Moment.likes).where(Moment.id == moment_id))
+        real_likes = result.scalar() or 0
+        return ServiceResponse(success=True, data={"liked": True, "likes": real_likes})
+
+    await db.commit()
+    result = await db.execute(select(Moment.likes).where(Moment.id == moment_id))
+    real_likes = result.scalar() or 0
+    return ServiceResponse(success=True, data={"liked": True, "likes": real_likes})
+
+
+@router.delete("/{moment_id}/like", response_model=ServiceResponse)
+async def unlike_moment(
+    moment_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Unlike a moment. Idempotent — succeeds even if not currently liked."""
+    moment = await _get_visible_moment_or_404(db, moment_id, current_user)
+    if not moment:
+        return ServiceResponse(success=False, error={"code": "NOT_FOUND", "message": "Moment not found"})
+
     del_stmt = delete(MomentLike).where(
         MomentLike.moment_id == moment_id,
         MomentLike.user_id == current_user.id,
@@ -293,44 +400,19 @@ async def toggle_moment_like(
     del_result = await db.execute(del_stmt)
 
     if del_result.rowcount and del_result.rowcount > 0:
-        # Unlike: we confirmed a like existed, decrement counter (guard >=0)
         await db.execute(
             update(Moment)
             .where(Moment.id == moment_id, Moment.likes > 0)
             .values(likes=Moment.likes - 1)
         )
-        liked = False
-    else:
-        # Like: insert new row, handle IntegrityError for concurrent duplicate
-        db.add(MomentLike(moment_id=moment_id, user_id=current_user.id))
-        try:
-            await db.flush()
-            await db.execute(
-                update(Moment)
-                .where(Moment.id == moment_id)
-                .values(likes=Moment.likes + 1)
-            )
-            liked = True
-        except IntegrityError:
-            await db.rollback()
-            # Already liked by another concurrent request — idempotent, don't re-increment
-            liked = True
 
     await db.commit()
-
-    # Re-read moment to get the real count after atomic operations
-    result = await db.execute(
-        select(Moment.likes).where(Moment.id == moment_id)
-    )
+    result = await db.execute(select(Moment.likes).where(Moment.id == moment_id))
     real_likes = result.scalar() or 0
-
-    return ServiceResponse(
-        success=True,
-        data={"liked": liked, "likes": real_likes},
-    )
+    return ServiceResponse(success=True, data={"liked": False, "likes": real_likes})
 
 
-# ==================== Comment endpoints ====================
+# ──────────────────── Comment endpoints ────────────────────
 
 
 @router.get("/{moment_id}/comments", response_model=ServiceResponse[list[MomentCommentResponse]])
@@ -339,11 +421,12 @@ async def get_moment_comments(
     db: AsyncSession = Depends(get_db),
     current_user: User | None = Depends(get_current_user_optional),
 ):
-    """Get comments for a moment, ordered by creation time (oldest first)."""
-    result = await db.execute(
-        select(Moment).where(Moment.id == moment_id, Moment.is_deleted.is_(False))
-    )
-    moment = result.scalar_one_or_none()
+    """Get comments for a moment, ordered by creation time (oldest first).
+
+    Enforces the same visibility rules as the moment list — anonymous users
+    can only see comments on public moments.
+    """
+    moment = await _get_visible_moment_or_404(db, moment_id, current_user)
     if not moment:
         return ServiceResponse(success=False, error={"code": "NOT_FOUND", "message": "Moment not found"})
 
@@ -382,19 +465,22 @@ async def create_moment_comment(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Add a comment to a moment. Requires authentication."""
-    result = await db.execute(
-        select(Moment).where(Moment.id == moment_id, Moment.is_deleted.is_(False))
-    )
-    moment = result.scalar_one_or_none()
+    """Add a comment to a moment. Requires authentication.
+
+    Enforces visibility rules — user must be able to see the moment to comment.
+    """
+    moment = await _get_visible_moment_or_404(db, moment_id, current_user)
     if not moment:
         return ServiceResponse(success=False, error={"code": "NOT_FOUND", "message": "Moment not found"})
 
-    # Validate reply_to_name from database to prevent spoofing
+    # Validate reply_to_id: must exist AND belong to the SAME moment
     validated_reply_to_name: str | None = None
     if data.reply_to_id is not None:
         reply_to_result = await db.execute(
-            select(MomentComment).where(MomentComment.id == data.reply_to_id)
+            select(MomentComment).where(
+                MomentComment.id == data.reply_to_id,
+                MomentComment.moment_id == moment_id,
+            )
         )
         reply_to_comment = reply_to_result.scalar_one_or_none()
         if reply_to_comment:
@@ -454,6 +540,7 @@ async def delete_moment_comment(
     current_user: User = Depends(get_current_active_user),
 ):
     """Delete a comment. Only the comment author can delete."""
+    # Find comment scoped to this moment
     result = await db.execute(
         select(MomentComment).where(
             MomentComment.id == comment_id,
@@ -466,7 +553,7 @@ async def delete_moment_comment(
     if comment.author_id != current_user.id:
         return ServiceResponse(success=False, error={"code": "FORBIDDEN", "message": "Not your comment"})
 
-    # Verify moment exists (still present, not deleted)
+    # Verify moment still exists
     moment_result = await db.execute(
         select(Moment).where(Moment.id == moment_id, Moment.is_deleted.is_(False))
     )

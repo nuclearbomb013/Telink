@@ -6,7 +6,6 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { followService } from '@/services/follow.service';
-import type { FollowStats } from '@/services/follow.types';
 
 /**
  * useFollow Hook 返回值
@@ -254,19 +253,5 @@ export function useFollow({
     clearError,
   };
 }
-
-/**
- * 获取用户关注统计（同步版本）
- */
-export const getFollowStatsSync = (userId: number): FollowStats => {
-  return followService.getStatsSync(userId);
-};
-
-/**
- * 检查是否互关（同步版本）
- */
-export const isMutualSync = (userId1: number, userId2: number): boolean => {
-  return followService.isMutualSync(userId1, userId2);
-};
 
 export default useFollow;

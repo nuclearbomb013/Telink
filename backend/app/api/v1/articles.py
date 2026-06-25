@@ -9,9 +9,9 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, delete
+from sqlalchemy import select, func, delete, update
 
-from app.api.deps import get_db, get_current_active_user
+from app.api.deps import get_db, get_current_active_user, get_current_user_optional
 from app.models.user import User
 from app.models.article import Article, ArticleTag, ArticleStatus
 from app.schemas.common import ServiceResponse
@@ -82,12 +82,43 @@ async def get_unique_slug_for_update(
     return f"{base_slug}-{int(datetime.now(timezone.utc).timestamp())}"
 
 
-async def transform_article_to_response(article: Article, db: AsyncSession) -> dict:
-    """Transform Article model to response dict. Tags are queried separately."""
-    tag_result = await db.execute(
-        select(ArticleTag.tag).where(ArticleTag.article_id == article.id)
+async def _batch_fetch_tags(db: AsyncSession, article_ids: list[int]) -> dict[int, list[str]]:
+    """Fetch tags for multiple articles in one query. Returns {article_id: [tags]}."""
+    if not article_ids:
+        return {}
+    result = await db.execute(
+        select(ArticleTag.article_id, ArticleTag.tag).where(
+            ArticleTag.article_id.in_(article_ids)
+        )
     )
-    tags = [row[0] for row in tag_result.fetchall()]
+    mapping: dict[int, list[str]] = {}
+    for aid, tag in result:
+        mapping.setdefault(aid, []).append(tag)
+    return mapping
+
+
+async def transform_article_to_response(
+    article: Article,
+    db: AsyncSession | None = None,
+    tags: list[str] | None = None,
+    tags_map: dict[int, list[str]] | None = None,
+) -> dict:
+    """Transform Article model to response dict.
+
+    Tags can be provided directly (tags), via a pre-fetched map (tags_map),
+    or queried via db. If none are given, falls back to an empty list.
+    """
+    if tags is not None:
+        tag_list = tags
+    elif tags_map is not None:
+        tag_list = tags_map.get(article.id, [])
+    elif db is not None:
+        tag_result = await db.execute(
+            select(ArticleTag.tag).where(ArticleTag.article_id == article.id)
+        )
+        tag_list = [row[0] for row in tag_result.fetchall()]
+    else:
+        tag_list = []
 
     created_at = article.created_at
     if hasattr(created_at, "timestamp"):
@@ -110,7 +141,7 @@ async def transform_article_to_response(article: Article, db: AsyncSession) -> d
         "author_avatar": article.author_avatar,
         "category": article.category,
         "status": article.status,
-        "tags": tags,
+        "tags": tag_list,
         "views": article.views or 0,
         "likes": article.likes or 0,
         "is_featured": article.is_featured,
@@ -118,6 +149,29 @@ async def transform_article_to_response(article: Article, db: AsyncSession) -> d
         "created_at": created_at,
         "updated_at": updated_at,
     }
+
+
+async def _get_article_detail_response(
+    article: Article,
+    db: AsyncSession,
+    increment_views: bool = True,
+) -> dict:
+    """Build article detail response with tags and optional view increment."""
+    tags_map = await _batch_fetch_tags(db, [article.id])
+    tag_list = tags_map.get(article.id, [])
+
+    if increment_views:
+        # Atomic increment to prevent TOCTOU race under concurrent reads
+        await db.execute(
+            update(Article)
+            .where(Article.id == article.id)
+            .values(views=func.coalesce(Article.views, 0) + 1)
+        )
+        await db.commit()
+        # Reload to get the updated view count
+        await db.refresh(article)
+
+    return await transform_article_to_response(article, tags=tag_list)
 
 
 @router.get("", response_model=ServiceResponse[ArticleListResult])
@@ -163,9 +217,12 @@ async def get_articles(
     result = await db.execute(query)
     articles = result.scalars().all()
 
+    # Batch-fetch tags for all articles on this page
+    tags_map = await _batch_fetch_tags(db, [a.id for a in articles])
+
     article_list = []
     for article in articles:
-        data = await transform_article_to_response(article, db)
+        data = await transform_article_to_response(article, tags_map=tags_map)
         article_list.append(ArticleListResponse(**data))
 
     total_pages = (total + limit - 1) // limit if total > 0 else 0
@@ -199,14 +256,9 @@ async def get_article_by_slug(
             error={"code": "NOT_FOUND", "message": "Article not found or not published"},
         )
 
-    # Increment views
-    article.views = (article.views or 0) + 1
-    await db.flush()
-    await db.commit()
-
     return ServiceResponse(
         success=True,
-        data=ArticleResponse(**await transform_article_to_response(article, db)),
+        data=ArticleResponse(**await _get_article_detail_response(article, db, increment_views=True)),
     )
 
 
@@ -235,8 +287,10 @@ async def get_my_articles(
     result = await db.execute(query)
     articles = result.scalars().all()
 
+    tags_map = await _batch_fetch_tags(db, [a.id for a in articles])
+
     article_list = [
-        ArticleListResponse(**await transform_article_to_response(a, db))
+        ArticleListResponse(**await transform_article_to_response(a, tags_map=tags_map))
         for a in articles
     ]
     total_pages = (total + limit - 1) // limit if total > 0 else 0
@@ -256,10 +310,10 @@ async def get_my_articles(
 @router.get("/{article_id}", response_model=ServiceResponse[ArticleResponse])
 async def get_article_by_id(
     article_id: int,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User | None = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get article by ID. Author can see their own drafts; others see published only."""
+    """Get article by ID. Published articles are public; drafts require author login."""
     result = await db.execute(select(Article).where(Article.id == article_id))
     article = result.scalar_one_or_none()
 
@@ -269,16 +323,23 @@ async def get_article_by_id(
             error={"code": "NOT_FOUND", "message": "Article not found"},
         )
 
-    # Non-authors can only see published articles
-    if article.author_id != current_user.id and article.status != ArticleStatus.PUBLISHED.value:
+    # Published articles are visible to everyone
+    if article.status == ArticleStatus.PUBLISHED.value:
+        return ServiceResponse(
+            success=True,
+            data=ArticleResponse(**await _get_article_detail_response(article, db, increment_views=True)),
+        )
+
+    # Draft/pending — only the author can view
+    if not current_user or article.author_id != current_user.id:
         return ServiceResponse(
             success=False,
-            error={"code": "FORBIDDEN", "message": "You can only view published articles"},
+            error={"code": "NOT_FOUND", "message": "Article not found"},
         )
 
     return ServiceResponse(
         success=True,
-        data=ArticleResponse(**await transform_article_to_response(article, db)),
+        data=ArticleResponse(**await _get_article_detail_response(article, db, increment_views=False)),
     )
 
 

@@ -19,6 +19,7 @@ from sqlalchemy import select, delete
 
 from app.models.user import User, UserRole
 from app.models.follow import Follow
+from app.models.moment import Moment
 from app.core.security import TokenManager, PasswordManager
 
 
@@ -101,6 +102,30 @@ class TestFollowAPI:
                 assert r2.json()["success"] is True  # Idempotent success
         finally:
             await _cleanup_users(test_session_maker, u1, u2)
+
+    @pytest.mark.asyncio
+    async def test_deleted_or_inactive_users_cannot_be_followed(self, test_app, test_session_maker):
+        follower = await _create_user(test_session_maker)
+        inactive = await _create_user(test_session_maker)
+        deleted = await _create_user(test_session_maker)
+        async with test_session_maker() as s:
+            inactive_db = await s.get(User, inactive.id)
+            inactive_db.is_active = False
+            deleted_db = await s.get(User, deleted.id)
+            await s.delete(deleted_db)
+            await s.commit()
+        try:
+            transport = ASGITransport(app=test_app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                r = await client.post(f"/api/v1/follow/{inactive.id}", headers=_token(follower))
+                assert r.json()["success"] is False
+                assert r.json()["error"]["code"] == "FORBIDDEN"
+
+                r = await client.post(f"/api/v1/follow/{deleted.id}", headers=_token(follower))
+                assert r.json()["success"] is False
+                assert r.json()["error"]["code"] == "NOT_FOUND"
+        finally:
+            await _cleanup_users(test_session_maker, follower, inactive, deleted)
 
     @pytest.mark.asyncio
     async def test_unfollow_success(self, test_app, test_session_maker):
@@ -264,3 +289,37 @@ class TestFollowAPI:
             assert r.status_code == 401
             r = await client.delete("/api/v1/follow/1")
             assert r.status_code == 401
+
+
+class TestFollowMomentCount:
+    """Verify FollowUserInfo.moment_count reflects actual moments, not post_count."""
+
+    @pytest.mark.asyncio
+    async def test_moment_count_is_actual_moments(self, test_app, test_session_maker):
+        """moment_count in following list should come from moments table."""
+        u1 = await _create_user(test_session_maker)
+        u2 = await _create_user(test_session_maker)
+
+        async with test_session_maker() as s:
+            # Create 3 moments for u2
+            for i in range(3):
+                m = Moment(author_id=u2.id, author_name=u2.username, content=f"moment {i}")
+                s.add(m)
+            await s.commit()
+
+        try:
+            transport = ASGITransport(app=test_app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                # u1 follows u2
+                await client.post(f"/api/v1/follow/{u2.id}", headers=_token(u1))
+
+                # Get u1's following list
+                r = await client.get(f"/api/v1/follow/{u1.id}/following", headers=_token(u1))
+                assert r.status_code == 200
+                data = r.json()
+                assert data["success"] is True
+                followed_users = data["data"]["users"]
+                u2_info = next(u for u in followed_users if u["id"] == u2.id)
+                assert u2_info["moment_count"] == 3
+        finally:
+            await _cleanup_users(test_session_maker, u1, u2)

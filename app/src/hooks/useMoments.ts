@@ -184,11 +184,14 @@ export function useMoments({
   );
 
   /**
-   * 点赞
+   * 点赞/取消点赞
    */
   const toggleLike = useCallback(
     async (momentId: number, userId: number) => {
-      const response = await momentService.toggleLike(momentId, userId);
+      const moment = moments.find(m => m.id === momentId);
+      if (!moment) return;
+
+      const response = await momentService.toggleLike(momentId, userId, moment.isLiked ?? false);
 
       if (response.success && response.data) {
         setMoments(prev =>
@@ -200,7 +203,7 @@ export function useMoments({
         );
       }
     },
-    []
+    [moments]
   );
 
   /**

@@ -119,16 +119,14 @@ class MomentService {
   }
 
   /**
-   * Get a single moment by ID.
+   * Get a single moment by ID. Uses the dedicated GET /moments/{id} endpoint.
    */
   async getMomentById(
     id: number,
     _currentUserId?: number
   ): Promise<MomentServiceResponse<Moment>> {
     try {
-      // For single moment fetch, use the list with user filter as workaround
-      // (backend doesn't have a dedicated GET /moments/:id endpoint yet)
-      const response = await momentApi.getMoments({ user_id: undefined, limit: 100 });
+      const response = await momentApi.getMomentById(id);
       if (!response.success || !response.data) {
         return {
           success: false,
@@ -136,15 +134,7 @@ class MomentService {
           timestamp: Date.now(),
         };
       }
-      const found = response.data.moments.find(m => m.id === id);
-      if (!found) {
-        return {
-          success: false,
-          error: { code: 'NOT_FOUND', message: 'Moment not found' },
-          timestamp: Date.now(),
-        };
-      }
-      return { success: true, data: transformMoment(found), timestamp: Date.now() };
+      return { success: true, data: transformMoment(response.data), timestamp: Date.now() };
     } catch (error) {
       return {
         success: false,
@@ -250,15 +240,13 @@ class MomentService {
   }
 
   /**
-   * Toggle like on a moment.
+   * Like a moment. Idempotent — no-op if already liked.
    */
-  async toggleLike(
+  async like(
     momentId: number,
-    _userId: number
   ): Promise<MomentServiceResponse<{ liked: boolean; likes: number }>> {
     try {
-      const response = await momentApi.toggleLike(momentId);
-
+      const response = await momentApi.like(momentId);
       if (!response.success || !response.data) {
         return {
           success: false,
@@ -266,7 +254,6 @@ class MomentService {
           timestamp: Date.now(),
         };
       }
-
       return { success: true, data: response.data, timestamp: Date.now() };
     } catch (error) {
       return {
@@ -275,6 +262,48 @@ class MomentService {
         timestamp: Date.now(),
       };
     }
+  }
+
+  /**
+   * Unlike a moment. Idempotent — no-op if not liked.
+   */
+  async unlike(
+    momentId: number,
+  ): Promise<MomentServiceResponse<{ liked: boolean; likes: number }>> {
+    try {
+      const response = await momentApi.unlike(momentId);
+      if (!response.success || !response.data) {
+        return {
+          success: false,
+          error: response.error || { code: 'LIKE_ERROR', message: 'Unlike operation failed' },
+          timestamp: Date.now(),
+        };
+      }
+      return { success: true, data: response.data, timestamp: Date.now() };
+    } catch (error) {
+      return {
+        success: false,
+        error: { code: 'LIKE_ERROR', message: error instanceof Error ? error.message : 'Failed' },
+        timestamp: Date.now(),
+      };
+    }
+  }
+
+  /**
+   * Toggle like on a moment.
+   * @param momentId - Moment ID
+   * @param _userId - (unused, kept for backward compatibility)
+   * @param isLiked - Whether the moment is currently liked by the user
+   */
+  async toggleLike(
+    momentId: number,
+    _userId: number,
+    isLiked: boolean
+  ): Promise<MomentServiceResponse<{ liked: boolean; likes: number }>> {
+    if (isLiked) {
+      return this.unlike(momentId);
+    }
+    return this.like(momentId);
   }
 
   /**
