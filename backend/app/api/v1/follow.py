@@ -71,18 +71,36 @@ async def _build_follow_user_info(
     user: User,
     current_user_id: int | None,
     moment_counts: dict[int, int] | None = None,
+    follower_counts_map: dict[int, int] | None = None,
+    following_counts_map: dict[int, int] | None = None,
+    following_set: set[int] | None = None,
+    mutual_set: set[int] | None = None,
 ) -> FollowUserInfo:
-    """Build FollowUserInfo for a user, including current user's follow status."""
-    followers, following = await _get_follow_counts(db, user.id)
+    """Build FollowUserInfo for a user.
 
+    When batch maps are provided (list endpoints), no per-user queries are made.
+    When omitted (single-user status endpoint), falls back to individual queries.
+    """
+    # Follower / following counts
+    if follower_counts_map is not None:
+        followers = follower_counts_map.get(user.id, 0)
+        following = following_counts_map.get(user.id, 0) if following_counts_map is not None else 0
+    else:
+        followers, following = await _get_follow_counts(db, user.id)
+
+    # Follow status
     is_following = False
     is_mutual = False
     if current_user_id and current_user_id != user.id:
-        is_following = await _is_following_user(db, current_user_id, user.id)
-        if is_following:
-            is_mutual = await _is_following_user(db, user.id, current_user_id)
+        if following_set is not None:
+            is_following = user.id in following_set
+            is_mutual = user.id in (mutual_set or set())
+        else:
+            is_following = await _is_following_user(db, current_user_id, user.id)
+            if is_following:
+                is_mutual = await _is_following_user(db, user.id, current_user_id)
 
-    # Use pre-fetched moment count when available (avoids N+1 queries in lists)
+    # Moment count
     if moment_counts is not None:
         moment_count = moment_counts.get(user.id, 0)
     else:
@@ -105,6 +123,72 @@ async def _build_follow_user_info(
         following_count=following,
         moment_count=moment_count,
     )
+
+
+async def _batch_build_list(
+    db: AsyncSession,
+    ordered_ids: list[int],
+    db_users: dict[int, User],
+    current_user_id: int | None,
+    moment_counts: dict[int, int],
+) -> list[FollowUserInfo]:
+    """Build FollowUserInfo list with batched queries — no N+1."""
+    if not ordered_ids:
+        return []
+
+    # ── Follower counts per user ──
+    fc_result = await db.execute(
+        select(Follow.following_id, func.count())
+        .where(Follow.following_id.in_(ordered_ids))
+        .group_by(Follow.following_id)
+    )
+    follower_counts = {row[0]: row[1] for row in fc_result.fetchall()}
+
+    # ── Following counts per user ──
+    fg_result = await db.execute(
+        select(Follow.follower_id, func.count())
+        .where(Follow.follower_id.in_(ordered_ids))
+        .group_by(Follow.follower_id)
+    )
+    following_counts = {row[0]: row[1] for row in fg_result.fetchall()}
+
+    # ── Current user's follow state ──
+    following_set: set[int] = set()
+    mutual_set: set[int] = set()
+    if current_user_id:
+        cu_following = await db.execute(
+            select(Follow.following_id).where(
+                Follow.follower_id == current_user_id,
+                Follow.following_id.in_(ordered_ids),
+            )
+        )
+        following_set = {row[0] for row in cu_following.fetchall()}
+
+        cu_followers = await db.execute(
+            select(Follow.follower_id).where(
+                Follow.following_id == current_user_id,
+                Follow.follower_id.in_(ordered_ids),
+            )
+        )
+        mutual_set = following_set & {row[0] for row in cu_followers.fetchall()}
+
+    # ── Assemble ──
+    result: list[FollowUserInfo] = []
+    for uid in ordered_ids:
+        user = db_users.get(uid)
+        if not user:
+            continue
+        result.append(
+            await _build_follow_user_info(
+                db, user, current_user_id,
+                moment_counts=moment_counts,
+                follower_counts_map=follower_counts,
+                following_counts_map=following_counts,
+                following_set=following_set,
+                mutual_set=mutual_set,
+            )
+        )
+    return result
 
 
 # ──────────────────── Follow / Unfollow ────────────────────
@@ -256,19 +340,17 @@ async def get_following(
     result = await db.execute(subq)
     following_ids = [row[0] for row in result.fetchall()]
 
-    # Fetch user info
+    # Batch fetch user info
     users_info: list[FollowUserInfo] = []
     if following_ids:
-        result = await db.execute(
-            select(User).where(User.id.in_(following_ids))
-        )
+        result = await db.execute(select(User).where(User.id.in_(following_ids)))
         db_users = {u.id: u for u in result.scalars().all()}
         moment_counts = await _batch_fetch_moment_counts(db, following_ids)
-        for uid in following_ids:
-            if uid in db_users:
-                users_info.append(
-                    await _build_follow_user_info(db, db_users[uid], current_user.id if current_user else None, moment_counts)
-                )
+        users_info = await _batch_build_list(
+            db, following_ids, db_users,
+            current_user.id if current_user else None,
+            moment_counts,
+        )
 
     has_more = (page * limit) < total
 
@@ -312,16 +394,14 @@ async def get_followers(
 
     users_info: list[FollowUserInfo] = []
     if follower_ids:
-        result = await db.execute(
-            select(User).where(User.id.in_(follower_ids))
-        )
+        result = await db.execute(select(User).where(User.id.in_(follower_ids)))
         db_users = {u.id: u for u in result.scalars().all()}
         moment_counts = await _batch_fetch_moment_counts(db, follower_ids)
-        for uid in follower_ids:
-            if uid in db_users:
-                users_info.append(
-                    await _build_follow_user_info(db, db_users[uid], current_user.id if current_user else None, moment_counts)
-                )
+        users_info = await _batch_build_list(
+            db, follower_ids, db_users,
+            current_user.id if current_user else None,
+            moment_counts,
+        )
 
     has_more = (page * limit) < total
 
@@ -371,16 +451,14 @@ async def get_friends(
 
     users_info: list[FollowUserInfo] = []
     if friend_ids:
-        result = await db.execute(
-            select(User).where(User.id.in_(friend_ids))
-        )
+        result = await db.execute(select(User).where(User.id.in_(friend_ids)))
         db_users = {u.id: u for u in result.scalars().all()}
         moment_counts = await _batch_fetch_moment_counts(db, friend_ids)
-        for uid in friend_ids:
-            if uid in db_users:
-                users_info.append(
-                    await _build_follow_user_info(db, db_users[uid], current_user.id if current_user else None, moment_counts)
-                )
+        users_info = await _batch_build_list(
+            db, friend_ids, db_users,
+            current_user.id if current_user else None,
+            moment_counts,
+        )
 
     has_more = (page * limit) < total
 

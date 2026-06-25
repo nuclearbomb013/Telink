@@ -31,8 +31,8 @@ class Follow(BaseModel):
         CheckConstraint(
             "follower_id <> following_id", name="ck_follows_no_self"
         ),
-        Index("ix_follows_follower", "follower_id"),
-        Index("ix_follows_following", "following_id"),
+        Index("ix_follows_follower_created_at", "follower_id", "created_at"),
+        Index("ix_follows_following_created_at", "following_id", "created_at"),
     )
 
     def __repr__(self) -> str:
