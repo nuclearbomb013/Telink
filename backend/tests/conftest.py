@@ -14,12 +14,14 @@ from app.api.deps import get_db
 from app.db.session import Base
 from app.main import create_app
 from app.core.rate_limit import rate_limiter
+from app.api.deps import clear_auth_caches
 
 
 @pytest.fixture(autouse=True)
-def _reset_rate_limiter():
-    """Reset the global rate limiter before each test to prevent 429 interference."""
+def _reset_global_state():
+    """Reset global state before each test for clean isolation."""
     rate_limiter._requests.clear()
+    clear_auth_caches()
     yield
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"

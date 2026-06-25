@@ -2,6 +2,7 @@
 API Dependencies
 """
 
+import time
 from typing import Generator, Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -16,6 +17,51 @@ from app.core.exceptions import UnauthorizedException, ForbiddenException
 
 # HTTP Bearer token security
 security = HTTPBearer(auto_error=False)
+
+# ── Lightweight TTL caches for high-frequency auth queries ──
+# Avoids 2 DB round-trips on every authenticated request.
+# TTLs are kept short so permission changes propagate quickly.
+
+_USER_CACHE: dict[int, tuple[float, User]] = {}
+_USER_CACHE_TTL = 30  # seconds — user entity rarely changes
+
+_BLACKLIST_CACHE: dict[str, tuple[float, bool]] = {}
+_BLACKLIST_CACHE_TTL = 60  # seconds — blacklist entries have JWT expiry ceiling
+
+
+async def _cached_get_user(db: AsyncSession, user_id: int) -> User | None:
+    """Fetch user with short in-process TTL cache."""
+    now = time.monotonic()
+    entry = _USER_CACHE.get(user_id)
+    if entry and (now - entry[0]) < _USER_CACHE_TTL:
+        return entry[1]
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user:
+        _USER_CACHE[user_id] = (now, user)
+    return user
+
+
+async def _cached_is_token_revoked(db: AsyncSession, jti: str) -> bool:
+    """Check blacklist with short in-process TTL cache."""
+    now = time.monotonic()
+    entry = _BLACKLIST_CACHE.get(jti)
+    if entry and (now - entry[0]) < _BLACKLIST_CACHE_TTL:
+        return entry[1]
+
+    result = await db.execute(
+        select(TokenBlacklist).where(TokenBlacklist.jti == jti)
+    )
+    revoked = result.scalar_one_or_none() is not None
+    _BLACKLIST_CACHE[jti] = (now, revoked)
+    return revoked
+
+
+def clear_auth_caches():
+    """Clear in-memory user and blacklist caches. Called by test fixtures."""
+    _USER_CACHE.clear()
+    _BLACKLIST_CACHE.clear()
 
 
 async def get_db() -> Generator:
@@ -71,16 +117,13 @@ async def get_current_user(
     if not user_id:
         raise UnauthorizedException("Invalid or expired token")
 
-    # Check if token is revoked
-    if jti and await is_token_revoked(db, jti):
+    # Check if token is revoked (cached, TTL 60s)
+    if jti and await _cached_is_token_revoked(db, jti):
         raise UnauthorizedException("Token has been revoked")
 
-    result = await db.execute(select(User).where(User.id == int(user_id)))
-    user = result.scalar_one_or_none()
-
+    user = await _cached_get_user(db, int(user_id))
     if not user:
         raise UnauthorizedException("User not found")
-
     return user
 
 
@@ -139,10 +182,9 @@ async def get_current_user_optional(
         user_id = TokenManager.verify_token(token, "access")
         if not user_id:
             return None
-        if jti and await is_token_revoked(db, jti):
+        if jti and await _cached_is_token_revoked(db, jti):
             return None
-        result = await db.execute(select(User).where(User.id == int(user_id)))
-        return result.scalar_one_or_none()
+        return await _cached_get_user(db, int(user_id))
     except Exception:
         return None
 

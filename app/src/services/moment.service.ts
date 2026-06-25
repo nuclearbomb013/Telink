@@ -307,12 +307,15 @@ class MomentService {
   }
 
   /**
-   * Get comments for a moment.
-   * Now uses the real backend API.
+   * Get paginated comments for a moment.
    */
-  async getComments(momentId: number): Promise<MomentServiceResponse<MomentComment[]>> {
+  async getComments(
+    momentId: number,
+    page = 1,
+    limit = 50,
+  ): Promise<MomentServiceResponse<{ comments: MomentComment[]; total: number; hasMore: boolean }>> {
     try {
-      const response = await momentApi.getComments(momentId);
+      const response = await momentApi.getComments(momentId, { page, limit });
 
       if (!response.success || !response.data) {
         return {
@@ -322,21 +325,28 @@ class MomentService {
         };
       }
 
+      const raw = response.data as Record<string, unknown>;
+      const comments = (raw.comments as Array<Record<string, unknown>> || []).map(r => ({
+        id: r.id as number,
+        momentId: r.moment_id as number,
+        authorId: r.author_id as number,
+        authorName: r.author_name as string,
+        authorAvatar: r.author_avatar as string | undefined,
+        content: r.content as string,
+        likes: (r.likes as number) || 0,
+        createdAt: r.created_at as number,
+        replyToId: r.reply_to_id as number | undefined,
+        replyToName: r.reply_to_name as string | undefined,
+        isLiked: (r.is_liked as boolean) || false,
+      }));
+
       return {
         success: true,
-        data: response.data.map((raw: Record<string, unknown>) => ({
-          id: raw.id as number,
-          momentId: raw.moment_id as number,
-          authorId: raw.author_id as number,
-          authorName: raw.author_name as string,
-          authorAvatar: raw.author_avatar as string | undefined,
-          content: raw.content as string,
-          likes: (raw.likes as number) || 0,
-          createdAt: raw.created_at as number,
-          replyToId: raw.reply_to_id as number | undefined,
-          replyToName: raw.reply_to_name as string | undefined,
-          isLiked: (raw.is_liked as boolean) || false,
-        })),
+        data: {
+          comments,
+          total: raw.total as number || 0,
+          hasMore: raw.has_more as boolean || false,
+        },
         timestamp: Date.now(),
       };
     } catch (error) {

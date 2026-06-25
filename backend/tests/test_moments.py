@@ -222,7 +222,8 @@ class TestMomentsAPI:
 
                 # List comments
                 r = await client.get(f"/api/v1/moments/{mid}/comments")
-                assert len(r.json()["data"]) == 1
+                assert len(r.json()["data"]["comments"]) == 1
+                assert r.json()["data"]["total"] == 1
 
                 # Comment count updated
                 r = await client.get("/api/v1/moments", headers=_token(u1))

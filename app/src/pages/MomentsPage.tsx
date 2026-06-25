@@ -425,36 +425,57 @@ const CommentModal = ({
 }) => {
   const [comments, setComments] = useState<MomentComment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [page, setPage] = useState(1);
   const [newComment, setNewComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
   const commentsEndRef = useRef<HTMLDivElement>(null);
 
-  /**
-   * 加载评论列表
-   */
+  /** Load first page of comments. */
   const loadComments = async () => {
     setIsLoading(true);
-    const response = await momentService.getComments(momentId);
+    setIsInitialLoad(true);
+    const response = await momentService.getComments(momentId, 1, 30);
     if (response.success && response.data) {
-      setComments(response.data);
+      const d = response.data;
+      setComments(d.comments);
+      setHasMore(d.hasMore);
+      setPage(1);
     }
     setIsLoading(false);
   };
 
-  /**
-   * 加载评论
-   */
+  /** Load older comments (next page). */
+  const loadMoreComments = async () => {
+    if (isLoading || !hasMore) return;
+    setIsLoading(true);
+    const nextPage = page + 1;
+    const response = await momentService.getComments(momentId, nextPage, 30);
+    if (response.success && response.data) {
+      const d = response.data;
+      setComments(prev => [...d.comments, ...prev]); // older comments first
+      setHasMore(d.hasMore);
+      setPage(nextPage);
+    }
+    setIsLoading(false);
+  };
+
   useEffect(() => {
     if (isOpen && momentId) {
       loadComments();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadComments intentionally excluded; defined inside component, would cause re-renders
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, momentId]);
 
   /**
-   * 滚动到底部
+   * Scroll to bottom only when a new comment is added (not on initial load).
    */
   useEffect(() => {
+    if (isInitialLoad) {
+      setIsInitialLoad(false);
+      return;
+    }
     if (commentsEndRef.current) {
       commentsEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
@@ -505,6 +526,18 @@ const CommentModal = ({
             <X size={18} />
           </button>
         </div>
+
+        {/* 加载更多 */}
+        {hasMore && !isLoading && (
+          <div className="px-4 pt-2 shrink-0">
+            <button
+              onClick={loadMoreComments}
+              className="w-full py-2 text-sm text-brand-dark-gray/70 hover:text-brand-text transition-colors border border-brand-border/20 rounded-sm"
+            >
+              加载更早的评论
+            </button>
+          </div>
+        )}
 
         {/* 评论列表 */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-[200px]">

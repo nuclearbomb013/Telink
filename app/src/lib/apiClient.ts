@@ -1129,8 +1129,11 @@ export const momentApi = {
     apiClient.delete<{ liked: boolean; likes: number }>(`/moments/${momentId}/like`),
 
   // Comment endpoints
-  getComments: (momentId: number) =>
-    apiClient.get<Record<string, unknown>[]>(`/moments/${momentId}/comments`),
+  getComments: (momentId: number, params?: { page?: number; limit?: number }) =>
+    apiClient.get<Record<string, unknown>>(
+      `/moments/${momentId}/comments`,
+      params as Record<string, string | number>,
+    ),
 
   createComment: (momentId: number, data: { content: string; reply_to_id?: number; reply_to_name?: string }) =>
     apiClient.post<Record<string, unknown>>(`/moments/${momentId}/comments`, data),

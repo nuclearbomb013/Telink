@@ -537,14 +537,11 @@ async def update_post(
 
     # Update tags
     if post_data.tags is not None:
-        # Remove existing tags
-        await db.execute(select(PostTag).where(PostTag.post_id == post.id))
-        existing_tags = (await db.execute(
-            select(PostTag).where(PostTag.post_id == post.id)
-        )).scalars().all()
-
-        for tag in existing_tags:
-            await db.delete(tag)
+        # Batch-delete existing tags (1 query instead of N)
+        from sqlalchemy import delete as sql_delete
+        await db.execute(
+            sql_delete(PostTag).where(PostTag.post_id == post.id)
+        )
 
         # Add new tags
         for tag in post_data.tags:

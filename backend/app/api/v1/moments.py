@@ -415,13 +415,15 @@ async def unlike_moment(
 # ──────────────────── Comment endpoints ────────────────────
 
 
-@router.get("/{moment_id}/comments", response_model=ServiceResponse[list[MomentCommentResponse]])
+@router.get("/{moment_id}/comments", response_model=ServiceResponse[dict])
 async def get_moment_comments(
     moment_id: int,
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User | None = Depends(get_current_user_optional),
 ):
-    """Get comments for a moment, ordered by creation time (oldest first).
+    """Get paginated comments for a moment, ordered by creation time (oldest first).
 
     Enforces the same visibility rules as the moment list — anonymous users
     can only see comments on public moments.
@@ -430,16 +432,28 @@ async def get_moment_comments(
     if not moment:
         return ServiceResponse(success=False, error={"code": "NOT_FOUND", "message": "Moment not found"})
 
+    # Count total
+    count_result = await db.execute(
+        select(func.count()).select_from(MomentComment).where(MomentComment.moment_id == moment_id)
+    )
+    total = count_result.scalar() or 0
+
+    # Paginate
+    offset = (page - 1) * limit
     comment_result = await db.execute(
         select(MomentComment)
         .where(MomentComment.moment_id == moment_id)
         .order_by(MomentComment.created_at.asc())
+        .offset(offset)
+        .limit(limit)
     )
     comments = comment_result.scalars().all()
+    has_more = (page * limit) < total
 
     return ServiceResponse(
         success=True,
-        data=[
+        data={
+            "comments": [
             MomentCommentResponse(
                 id=c.id,
                 moment_id=c.moment_id,
@@ -454,7 +468,10 @@ async def get_moment_comments(
                 created_at=int(c.created_at.timestamp() * 1000) if c.created_at else 0,
             )
             for c in comments
-        ]
+        ],
+            "total": total,
+            "has_more": has_more,
+        }
     )
 
 
