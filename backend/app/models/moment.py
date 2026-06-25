@@ -5,7 +5,7 @@ Similar to a social feed / WeChat Moments.
 Supports text, images, code snippets, and mixed content types.
 """
 
-from sqlalchemy import Column, String, Text, Integer, Boolean, ForeignKey, UniqueConstraint, JSON
+from sqlalchemy import Column, String, Text, Integer, Boolean, ForeignKey, UniqueConstraint, JSON, Index
 from sqlalchemy.orm import relationship
 
 from app.models.base import BaseModel
@@ -28,6 +28,12 @@ class Moment(BaseModel):
     likes = Column(Integer, default=0, nullable=False)
     comment_count = Column(Integer, default=0, nullable=False)
     is_deleted = Column(Boolean, default=False, nullable=False)
+
+    __table_args__ = (
+        Index("ix_moments_active_feed", "is_deleted", "visibility", "created_at"),
+        Index("ix_moments_author_feed", "is_deleted", "author_id", "created_at"),
+        Index("ix_moments_popular_feed", "is_deleted", "likes", "created_at"),
+    )
 
     # Relationships
     author = relationship("User", back_populates="moments")

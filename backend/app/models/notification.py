@@ -36,6 +36,8 @@ class Notification(BaseModel):
     # Composite index for efficient unread notification queries
     __table_args__ = (
         Index('ix_notifications_user_unread', 'user_id', 'is_read'),
+        Index("ix_notifications_user_read_created", "user_id", "is_read", "created_at"),
+        Index("ix_notifications_user_created", "user_id", "created_at"),
     )
 
     def to_dict(self) -> dict:

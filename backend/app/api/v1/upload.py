@@ -10,6 +10,7 @@ Security:
 import os
 import uuid
 import logging
+import anyio
 from datetime import datetime
 from io import BytesIO
 from fastapi import APIRouter, Depends, UploadFile, File
@@ -34,6 +35,9 @@ ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 MAX_IMAGE_WIDTH = 4096
 MAX_IMAGE_HEIGHT = 4096
 MAX_IMAGE_PIXELS = MAX_IMAGE_WIDTH * MAX_IMAGE_HEIGHT  # ~16.7M pixels
+
+# Streamed read size (read in chunks to avoid blocking event loop)
+READ_CHUNK_SIZE = 64 * 1024  # 64 KiB
 
 
 # Magic bytes for allowed image formats
@@ -162,8 +166,12 @@ async def upload_image(
 
 
 async def _do_upload_image(file: UploadFile, user: User) -> ServiceResponse[UploadResponse]:
-    """Internal function to handle image upload with full security validation."""
-    # Step 1: Basic extension check (quick filter)
+    """Internal function to handle image upload with full security validation.
+
+    Heavy work (magic bytes + Pillow decode/re-encode + disk write) runs
+    via anyio.to_thread.run_sync to avoid blocking the event loop.
+    """
+    # Step 1: Basic extension check (quick filter, sync-safe)
     ext = os.path.splitext(file.filename or "image.jpg")[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
         logger.warning(f"Upload rejected: invalid extension {ext} by user {user.id}")
@@ -175,8 +183,26 @@ async def _do_upload_image(file: UploadFile, user: User) -> ServiceResponse[Uplo
             }
         )
 
-    # Step 2: Read file content
-    contents = await file.read()
+    # Step 2: Streamed read with size limit (prevents event-loop blocking on large files)
+    chunks: list[bytes] = []
+    total_size = 0
+    while True:
+        chunk = await file.read(READ_CHUNK_SIZE)
+        if not chunk:
+            break
+        total_size += len(chunk)
+        if total_size > MAX_FILE_SIZE:
+            logger.warning(f"Upload rejected: file too large ({total_size}+ bytes) by user {user.id}")
+            return ServiceResponse(
+                success=False,
+                error={
+                    "code": "FILE_TOO_LARGE",
+                    "message": f"File size exceeds maximum of {MAX_FILE_SIZE // (1024*1024)}MB"
+                }
+            )
+        chunks.append(chunk)
+
+    contents = b"".join(chunks)
 
     # Step 3: Size validation
     if len(contents) == 0:
@@ -185,52 +211,26 @@ async def _do_upload_image(file: UploadFile, user: User) -> ServiceResponse[Uplo
             error={"code": "EMPTY_FILE", "message": "File content is empty"}
         )
 
-    if len(contents) > MAX_FILE_SIZE:
-        logger.warning(f"Upload rejected: file too large ({len(contents)} bytes) by user {user.id}")
+    # Step 4: Offload CPU-bound work to thread pool
+    try:
+        result = await anyio.to_thread.run_sync(
+            _process_and_save,
+            contents, ext, user.id,
+        )
+    except Exception as e:
+        logger.error(f"Upload processing failed for user {user.id}: {e}")
         return ServiceResponse(
             success=False,
-            error={
-                "code": "FILE_TOO_LARGE",
-                "message": f"File size exceeds maximum of {MAX_FILE_SIZE // (1024*1024)}MB"
-            }
+            error={"code": "PROCESSING_ERROR", "message": "Image processing failed"}
         )
 
-    # Step 4: Magic bytes validation (prevent extension spoofing)
-    if not _validate_magic_bytes(contents):
-        logger.warning(
-            f"Upload rejected: invalid magic bytes by user {user.id}, claimed ext={ext}, "
-            f"first_bytes={contents[:16].hex()}"
-        )
+    if not result:
         return ServiceResponse(
             success=False,
-            error={
-                "code": "INVALID_FILE_TYPE",
-                "message": "File content does not match declared image type"
-            }
+            error={"code": "INVALID_IMAGE", "message": "Image validation failed"}
         )
 
-    # Step 5: Pillow-based image validation and sanitization
-    valid, sanitized, safe_ext, safe_mime = _validate_and_sanitize_image(contents)
-    if not valid:
-        logger.warning(f"Upload rejected: Pillow validation failed by user {user.id}: {safe_ext}")
-        return ServiceResponse(
-            success=False,
-            error={
-                "code": "INVALID_IMAGE",
-                "message": f"Image validation failed: {safe_ext}"
-            }
-        )
-
-    # Step 6: Generate unique filename (never trust original filename)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    unique_id = uuid.uuid4().hex[:12]
-    new_filename = f"{timestamp}_{unique_id}{safe_ext}"
-
-    # Step 7: Save sanitized file
-    ensure_upload_dirs()
-    file_path = os.path.join(IMAGES_DIR, new_filename)
-    with open(file_path, "wb") as f:
-        f.write(sanitized)
+    safe_ext, safe_mime, sanitized, new_filename = result
 
     # Generate URL
     base_url = "http://localhost:8000" if settings.DEBUG else ""
@@ -252,3 +252,39 @@ async def _do_upload_image(file: UploadFile, user: User) -> ServiceResponse[Uplo
             content_type=safe_mime
         )
     )
+
+
+def _process_and_save(
+    contents: bytes, ext: str, user_id: int
+) -> tuple[str, str, bytes, str] | None:
+    """Sync helper: validate magic bytes, sanitize via Pillow, save to disk.
+
+    Runs in a thread-pool worker so the async event loop is never blocked.
+    Returns (safe_ext, safe_mime, sanitized_bytes, new_filename) or None.
+    """
+    # Magic bytes validation
+    if not _validate_magic_bytes(contents):
+        logger.warning(
+            f"Upload rejected: invalid magic bytes by user {user_id}, claimed ext={ext}, "
+            f"first_bytes={contents[:16].hex()}"
+        )
+        return None
+
+    # Pillow validation and sanitization
+    valid, sanitized, safe_ext, safe_mime = _validate_and_sanitize_image(contents)
+    if not valid:
+        logger.warning(f"Upload rejected: Pillow validation failed by user {user_id}: {safe_ext}")
+        return None
+
+    # Generate unique filename
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    unique_id = uuid.uuid4().hex[:12]
+    new_filename = f"{timestamp}_{unique_id}{safe_ext}"
+
+    # Save sanitized file
+    ensure_upload_dirs()
+    file_path = os.path.join(IMAGES_DIR, new_filename)
+    with open(file_path, "wb") as f:
+        f.write(sanitized)
+
+    return safe_ext, safe_mime, sanitized, new_filename

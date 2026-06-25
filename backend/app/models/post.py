@@ -2,7 +2,7 @@
 Post Model
 """
 
-from sqlalchemy import Column, String, Text, Integer, Boolean, ForeignKey, Table, UniqueConstraint
+from sqlalchemy import Column, String, Text, Integer, Boolean, ForeignKey, Table, UniqueConstraint, Index
 from sqlalchemy.orm import relationship
 
 from app.models.base import BaseModel
@@ -40,6 +40,13 @@ class Post(BaseModel):
     is_locked = Column(Boolean, default=False, nullable=False)
     is_featured = Column(Boolean, default=False, nullable=False)
     is_solved = Column(Boolean, default=False, nullable=False)
+
+    __table_args__ = (
+        Index("ix_posts_category_pinned", "category", "is_pinned", "created_at"),
+        Index("ix_posts_pinned_created", "is_pinned", "created_at"),
+        Index("ix_posts_views_created", "views", "created_at"),
+        Index("ix_posts_likes_created", "likes", "created_at"),
+    )
 
     # Relationships
     author = relationship("User", back_populates="posts")

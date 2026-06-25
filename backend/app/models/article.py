@@ -2,7 +2,7 @@
 Article Model - User-submitted articles with draft/review/publish workflow
 """
 
-from sqlalchemy import Column, String, Text, Integer, Boolean, ForeignKey, BigInteger
+from sqlalchemy import Column, String, Text, Integer, Boolean, ForeignKey, BigInteger, Index
 from sqlalchemy.orm import relationship
 from enum import Enum as PyEnum
 
@@ -37,6 +37,12 @@ class Article(BaseModel):
     likes = Column(Integer, default=0, nullable=False)
     is_featured = Column(Boolean, default=False, nullable=False)
     published_at = Column(BigInteger, nullable=True)
+
+    __table_args__ = (
+        Index("ix_articles_status_created", "status", "created_at"),
+        Index("ix_articles_status_category_created", "status", "category", "created_at"),
+        Index("ix_articles_status_views_created", "status", "views", "created_at"),
+    )
 
     # Relationships
     author = relationship("User", backref="articles")

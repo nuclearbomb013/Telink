@@ -2,7 +2,7 @@
 Favorite Model
 """
 
-from sqlalchemy import Column, String, Integer, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, String, Integer, ForeignKey, UniqueConstraint, Index
 from sqlalchemy.orm import relationship
 
 from app.models.base import BaseModel
@@ -20,6 +20,7 @@ class Favorite(BaseModel):
 
     __table_args__ = (
         UniqueConstraint('user_id', 'content_type', 'content_id', name='uq_favorites_user_content'),
+        Index("ix_user_favorites_user_type_created", "user_id", "content_type", "created_at"),
     )
 
     user = relationship("User", back_populates="favorites")
