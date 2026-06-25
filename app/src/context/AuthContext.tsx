@@ -57,9 +57,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // If access token is not in memory (page refresh), try to refresh it first
           // via the HttpOnly cookie before calling /auth/me
           if (!apiClient.getToken()) {
-            const newToken = await apiClient.tryRefreshToken();
-            if (newToken) {
-              apiClient.setToken(newToken);
+            const refreshResult = await apiClient.tryRefreshToken();
+            if (refreshResult.ok) {
+              apiClient.setToken(refreshResult.accessToken);
+            } else if (refreshResult.reason === 'INVALID_REFRESH') {
+              console.warn('[Auth] Refresh token invalid, clearing state');
+              authService.logout();
+              localStorage.removeItem('techink_current_user');
+              setCurrentUser(null);
+              setIsAuthenticated(false);
+              return;
+            } else {
+              console.warn('[Auth] Token refresh unavailable, keeping cached session');
+              setCurrentUser(localUser);
+              setIsAuthenticated(true);
+              return;
             }
           }
 
@@ -157,9 +169,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // First try refreshing token, then verify with the backend.
       if (!apiClient.getToken()) {
         try {
-          const newToken = await apiClient.tryRefreshToken();
-          if (newToken) {
-            apiClient.setToken(newToken);
+          const refreshResult = await apiClient.tryRefreshToken();
+          if (refreshResult.ok) {
+            apiClient.setToken(refreshResult.accessToken);
+          } else if (refreshResult.reason === 'INVALID_REFRESH') {
+            authService.logout();
+            localStorage.removeItem('techink_current_user');
+            setCurrentUser(null);
+            setIsAuthenticated(false);
+            return;
+          } else {
+            console.warn('[Auth] Token refresh unavailable during refresh, keeping current session');
+            return;
           }
         } catch {
           // Token refresh failed due to network — don't clear session yet

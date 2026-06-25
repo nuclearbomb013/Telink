@@ -29,12 +29,17 @@ async def _create_user(session_maker: async_sessionmaker[AsyncSession]) -> User:
 
 
 async def _follow(session_maker: async_sessionmaker[AsyncSession], follower_id: int, following_id: int):
-    """Make follower follow following, used to satisfy mutual-follow check for DMs."""
+    """Make follower follow following."""
     from app.models.follow import Follow
     async with session_maker() as s:
         f = Follow(follower_id=follower_id, following_id=following_id)
         s.add(f)
         await s.commit()
+
+
+async def _mutual_follow(session_maker: async_sessionmaker[AsyncSession], user_a: int, user_b: int):
+    await _follow(session_maker, user_a, user_b)
+    await _follow(session_maker, user_b, user_a)
 
 
 def _token(user: User) -> dict:
@@ -69,7 +74,7 @@ class TestMessagesAPI:
     async def test_send_and_read(self, test_app, test_session_maker):
         u1 = await _create_user(test_session_maker)
         u2 = await _create_user(test_session_maker)
-        await _follow(test_session_maker, u1.id, u2.id)  # u1 follows u2 (required for DM)
+        await _mutual_follow(test_session_maker, u1.id, u2.id)
         try:
             transport = ASGITransport(app=test_app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -124,6 +129,7 @@ class TestMessagesAPI:
         u1 = await _create_user(test_session_maker)
         u2 = await _create_user(test_session_maker)
         u3 = await _create_user(test_session_maker)
+        await _mutual_follow(test_session_maker, u1.id, u2.id)
         try:
             transport = ASGITransport(app=test_app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -143,7 +149,7 @@ class TestMessagesAPI:
     async def test_delete_message(self, test_app, test_session_maker):
         u1 = await _create_user(test_session_maker)
         u2 = await _create_user(test_session_maker)
-        await _follow(test_session_maker, u1.id, u2.id)  # u1 follows u2 (required for DM)
+        await _mutual_follow(test_session_maker, u1.id, u2.id)
         try:
             transport = ASGITransport(app=test_app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -151,10 +157,25 @@ class TestMessagesAPI:
                     "receiver_id": u2.id, "content": "temp"
                 }, headers=_token(u1))
                 mid = r.json()["data"]["id"]
-                # u1 deletes own message
+                # u1 hides own message view
                 r = await client.delete(f"/api/v1/messages/{mid}", headers=_token(u1))
                 assert r.json()["success"] is True
-                # u2 can't see deleted message
+
+                # u1 no longer sees it
+                r = await client.get(
+                    f"/api/v1/messages/conversations/{u2.id}", headers=_token(u1)
+                )
+                assert r.json()["data"]["total"] == 0
+
+                # u2 still sees it until they hide their own view
+                r = await client.get(
+                    f"/api/v1/messages/conversations/{u1.id}", headers=_token(u2)
+                )
+                assert r.json()["data"]["total"] == 1
+
+                r = await client.delete(f"/api/v1/messages/{mid}", headers=_token(u2))
+                assert r.json()["success"] is True
+
                 r = await client.get(
                     f"/api/v1/messages/conversations/{u1.id}", headers=_token(u2)
                 )
@@ -166,7 +187,7 @@ class TestMessagesAPI:
     async def test_mark_conversation_read(self, test_app, test_session_maker):
         u1 = await _create_user(test_session_maker)
         u2 = await _create_user(test_session_maker)
-        await _follow(test_session_maker, u1.id, u2.id)  # u1 follows u2 (required for DM)
+        await _mutual_follow(test_session_maker, u1.id, u2.id)
         try:
             transport = ASGITransport(app=test_app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -188,7 +209,7 @@ class TestMessagesAPI:
 
     @pytest.mark.asyncio
     async def test_non_follower_cannot_send(self, test_app, test_session_maker):
-        """A user who does not follow the target cannot send a DM."""
+        """A user who is not mutual followers with the target cannot send a DM."""
         u1 = await _create_user(test_session_maker)
         u2 = await _create_user(test_session_maker)
         # u1 does NOT follow u2
@@ -204,12 +225,29 @@ class TestMessagesAPI:
             await _cleanup(test_session_maker, u1, u2)
 
     @pytest.mark.asyncio
+    async def test_one_way_follow_cannot_send(self, test_app, test_session_maker):
+        """DMs require mutual follows, not just sender -> receiver follow."""
+        u1 = await _create_user(test_session_maker)
+        u2 = await _create_user(test_session_maker)
+        await _follow(test_session_maker, u1.id, u2.id)
+        try:
+            transport = ASGITransport(app=test_app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                r = await client.post("/api/v1/messages", json={
+                    "receiver_id": u2.id, "content": "one-way follow"
+                }, headers=_token(u1))
+                assert r.json()["success"] is False
+                assert r.json()["error"]["code"] == "FORBIDDEN"
+        finally:
+            await _cleanup(test_session_maker, u1, u2)
+
+    @pytest.mark.asyncio
     async def test_sender_id_in_payload_cannot_spoof_sender(self, test_app, test_session_maker):
         """sender_id in request JSON is ignored; sender is the authenticated user."""
         sender = await _create_user(test_session_maker)
         receiver = await _create_user(test_session_maker)
         spoofed = await _create_user(test_session_maker)
-        await _follow(test_session_maker, sender.id, receiver.id)
+        await _mutual_follow(test_session_maker, sender.id, receiver.id)
         try:
             transport = ASGITransport(app=test_app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:

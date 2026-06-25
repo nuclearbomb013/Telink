@@ -46,17 +46,6 @@ function toMessage(raw: {
 
 // ==================== Async API (Real Backend) ====================
 
-async function canSendMessage(
-  senderId: number,
-  receiverId: number
-): Promise<boolean> {
-  return senderId !== receiverId;
-}
-
-function canSendMessageSync(senderId: number, receiverId: number): boolean {
-  return senderId !== receiverId;
-}
-
 async function getConversations(
   _currentUserId: number
 ): Promise<MessageServiceResponse<Conversation[]>> {
@@ -194,8 +183,6 @@ async function getChatWindowState(
 }
 
 export const messageService = {
-  canSendMessage,
-  canSendMessageSync,
   getConversations,
   getMessages,
   sendMessage,

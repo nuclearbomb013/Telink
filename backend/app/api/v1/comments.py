@@ -408,9 +408,18 @@ async def delete_comment(
         # Collect unique author IDs from child replies (P8-96)
         child_reply_author_ids = {reply.author_id for reply in child_replies if reply.author_id != comment.author_id}
 
-    # Get the comment author for counter update (P8-96)
-    result = await db.execute(select(User).where(User.id == comment.author_id))
-    comment_author = result.scalar_one_or_none()
+    # Batch-load all affected users in one query (P10: fix N+1 per child author)
+    affected_author_ids = {comment.author_id}
+    if child_reply_author_ids:
+        affected_author_ids.update(child_reply_author_ids)
+    affected_users_result = await db.execute(
+        select(User).where(User.id.in_(list(affected_author_ids)))
+    )
+    affected_users = {u.id: u for u in affected_users_result.scalars().all()}
+
+    # Pre-compute reply counts per child author (avoids O(n) re-scan in the loop)
+    from collections import Counter
+    child_author_counts = Counter(r.author_id for r in child_replies)
 
     # Soft delete (mark as deleted)
     comment.is_deleted = 1
@@ -427,24 +436,19 @@ async def delete_comment(
             ).values(is_deleted=1, content="[已删除]", updated_at=utcnow_naive())
         )
 
-    # Update comment author's comment count (P9-105 fix: only count own comments)
-    # Author loses 1 (top-level) + their own child replies
+    # Update comment author's comment count (P9-105: only count own comments)
+    comment_author = affected_users.get(comment.author_id)
     if comment_author:
-        # Count only the author's own child replies
-        author_own_child_count = sum(1 for reply in child_replies if reply.author_id == comment.author_id)
+        author_own_child_count = child_author_counts.get(comment.author_id, 0)
         total_deleted_for_author = 1 + author_own_child_count
         comment_author.comment_count = max(0, comment_author.comment_count - total_deleted_for_author)
 
-    # Update child reply authors' comment counts (P8-96)
-    # Each child reply author loses 1 from their comment_count
-    if child_reply_author_ids:
-        for author_id in child_reply_author_ids:
-            result = await db.execute(select(User).where(User.id == author_id))
-            child_author = result.scalar_one_or_none()
-            if child_author:
-                # Count how many of this author's replies are being deleted
-                author_replies_count = sum(1 for reply in child_replies if reply.author_id == author_id)
-                child_author.comment_count = max(0, child_author.comment_count - author_replies_count)
+    # Update child reply authors' comment counts (P10: batch update, no per-author query)
+    for author_id in child_reply_author_ids:
+        child_author = affected_users.get(author_id)
+        if child_author:
+            author_replies_count = child_author_counts.get(author_id, 0)
+            child_author.comment_count = max(0, child_author.comment_count - author_replies_count)
 
     # Update post reply count with total deleted (P8-91)
     result = await db.execute(select(Post).where(Post.id == comment.post_id))

@@ -55,10 +55,11 @@ describe('AuthContext initialization', () => {
     localStorage.setItem('techink_current_user', JSON.stringify(cachedUser));
     vi.mocked(authService.getCurrentUser).mockReturnValue(cachedUser);
     vi.mocked(apiClient.getToken).mockReturnValue(null);
-    vi.mocked(apiClient.tryRefreshToken).mockResolvedValue(null);
+    vi.mocked(apiClient.tryRefreshToken).mockResolvedValue({ ok: true, accessToken: 'fresh' });
   });
 
   it('does not trust a cached localStorage user after refresh and auth validation fail', async () => {
+    vi.mocked(apiClient.tryRefreshToken).mockResolvedValue({ ok: false, reason: 'INVALID_REFRESH' });
     vi.mocked(authService.fetchCurrentUser).mockResolvedValue({
       success: false,
       error: { code: 'INVALID_TOKEN', message: 'invalid' },
@@ -74,6 +75,7 @@ describe('AuthContext initialization', () => {
     expect(await screen.findByTestId('authenticated')).toHaveTextContent('false');
     expect(screen.getByTestId('current-user')).toHaveTextContent('none');
     expect(authService.logout).toHaveBeenCalled();
+    expect(authService.fetchCurrentUser).not.toHaveBeenCalled();
     expect(localStorage.getItem('techink_current_user')).toBeNull();
   });
 
@@ -96,5 +98,20 @@ describe('AuthContext initialization', () => {
     await waitFor(() => {
       expect(localStorage.getItem('techink_current_user')).toBe(JSON.stringify(cachedUser));
     });
+  });
+
+  it('keeps the cached user when refresh fails with a network error', async () => {
+    vi.mocked(apiClient.tryRefreshToken).mockResolvedValue({ ok: false, reason: 'NETWORK_ERROR' });
+
+    render(
+      <AuthProvider>
+        <Consumer />
+      </AuthProvider>,
+    );
+
+    expect(await screen.findByTestId('authenticated')).toHaveTextContent('true');
+    expect(screen.getByTestId('current-user')).toHaveTextContent('cached');
+    expect(authService.logout).not.toHaveBeenCalled();
+    expect(authService.fetchCurrentUser).not.toHaveBeenCalled();
   });
 });

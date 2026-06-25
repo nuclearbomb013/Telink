@@ -28,6 +28,10 @@ export interface ServiceResponse<T = unknown> {
   timestamp: number;
 }
 
+export type RefreshResult =
+  | { ok: true; accessToken: string }
+  | { ok: false; reason: 'INVALID_REFRESH' | 'NETWORK_ERROR' | 'SERVER_ERROR' };
+
 /**
  * API 客户端类
  * P0-4: Access token stored in memory only, never in localStorage.
@@ -38,7 +42,7 @@ class ApiClient {
   /** P0-4: Access token stored in module-level variable (memory only) */
   private accessToken: string | null = null;
   private isRefreshing = false;
-  private refreshPromise: Promise<string | null> | null = null;
+  private refreshPromise: Promise<RefreshResult> | null = null;
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl;
@@ -69,7 +73,7 @@ class ApiClient {
    * 尝试刷新 Token（Promise 锁防止并发刷新）
    * P0-4: Refresh token is in HttpOnly cookie, sent automatically via credentials: 'include'
    */
-  async tryRefreshToken(): Promise<string | null> {
+  async tryRefreshToken(): Promise<RefreshResult> {
     if (this.isRefreshing && this.refreshPromise) {
       return this.refreshPromise;
     }
@@ -86,21 +90,30 @@ class ApiClient {
         });
 
         if (!response.ok) {
+          if (response.status === 401 || response.status === 403) {
+            this.clearToken();
+            localStorage.removeItem('techink_current_user');
+            return { ok: false, reason: 'INVALID_REFRESH' };
+          }
+          if (response.status >= 500) {
+            return { ok: false, reason: 'SERVER_ERROR' };
+          }
           this.clearToken();
-          // Clear user data on refresh failure
           localStorage.removeItem('techink_current_user');
-          return null;
+          return { ok: false, reason: 'INVALID_REFRESH' };
         }
 
         const data = await response.json();
         if (data.success && data.data?.accessToken) {
           // Store new access token in memory only (P0-4)
           this.setToken(data.data.accessToken);
-          return data.data.accessToken;
+          return { ok: true, accessToken: data.data.accessToken };
         }
-        return null;
+        this.clearToken();
+        localStorage.removeItem('techink_current_user');
+        return { ok: false, reason: 'INVALID_REFRESH' };
       } catch {
-        return null;
+        return { ok: false, reason: 'NETWORK_ERROR' };
       } finally {
         this.isRefreshing = false;
         this.refreshPromise = null;
@@ -141,9 +154,9 @@ class ApiClient {
       if (!response.ok) {
         // Auto-refresh token on 401 (exclude auth endpoints to prevent loops)
         if (response.status === 401 && !endpoint.startsWith('/auth/')) {
-          const newToken = await this.tryRefreshToken();
-          if (newToken) {
-            const retryHeaders = { ...headers, 'Authorization': `Bearer ${newToken}` };
+          const refreshResult = await this.tryRefreshToken();
+          if (refreshResult.ok) {
+            const retryHeaders = { ...headers, 'Authorization': `Bearer ${refreshResult.accessToken}` };
             const retryRsp = await fetch(url, { ...options, headers: retryHeaders, credentials: 'include' });
             if (retryRsp.ok) return retryRsp.json();
             const retryData = await retryRsp.json();
@@ -156,8 +169,18 @@ class ApiClient {
               timestamp: Date.now(),
             };
           }
-          this.clearToken();
-          localStorage.removeItem('techink_current_user');
+          if (refreshResult.reason !== 'INVALID_REFRESH') {
+            return {
+              success: false,
+              error: {
+                code: refreshResult.reason,
+                message: refreshResult.reason === 'NETWORK_ERROR'
+                  ? 'Network error during token refresh'
+                  : 'Token refresh temporarily unavailable',
+              },
+              timestamp: Date.now(),
+            };
+          }
         }
 
         return {
@@ -265,9 +288,9 @@ class ApiClient {
 
       // P0-4: Auto-refresh on 401 (re-create FormData since it's consumed)
       if (response.status === 401 && !endpoint.startsWith('/auth/')) {
-        const newToken = await this.tryRefreshToken();
-        if (newToken) {
-          this.setToken(newToken);
+        const refreshResult = await this.tryRefreshToken();
+        if (refreshResult.ok) {
+          this.setToken(refreshResult.accessToken);
           const retryRsp = await fetch(url, {
             method: 'POST',
             headers: buildHeaders(),
@@ -276,9 +299,17 @@ class ApiClient {
           });
           if (retryRsp.ok) return retryRsp.json();
           response = retryRsp;
-        } else {
-          this.clearToken();
-          localStorage.removeItem('techink_current_user');
+        } else if (refreshResult.reason !== 'INVALID_REFRESH') {
+          return {
+            success: false,
+            error: {
+              code: refreshResult.reason,
+              message: refreshResult.reason === 'NETWORK_ERROR'
+                ? 'Network error during token refresh'
+                : 'Token refresh temporarily unavailable',
+            },
+            timestamp: Date.now(),
+          };
         }
       }
 

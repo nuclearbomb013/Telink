@@ -46,4 +46,42 @@ describe('apiClient auth refresh behavior', () => {
     expect(localStorage.getItem('techink_auth_token')).toBeNull();
     expect(localStorage.getItem('refreshToken')).toBeNull();
   });
+
+  it('does not clear cached user when refresh fails due to network error', async () => {
+    localStorage.setItem('techink_current_user', '{"id":1}');
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('offline')));
+
+    const result = await apiClient.tryRefreshToken();
+
+    expect(result).toEqual({ ok: false, reason: 'NETWORK_ERROR' });
+    expect(localStorage.getItem('techink_current_user')).toBe('{"id":1}');
+  });
+
+  it('does not clear cached user when refresh endpoint has a server error', async () => {
+    localStorage.setItem('techink_current_user', '{"id":1}');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(
+      { success: false, error: { code: 'SERVER_ERROR', message: 'down' } },
+      { status: 503 },
+    )));
+
+    const result = await apiClient.tryRefreshToken();
+
+    expect(result).toEqual({ ok: false, reason: 'SERVER_ERROR' });
+    expect(localStorage.getItem('techink_current_user')).toBe('{"id":1}');
+  });
+
+  it('clears cached user only when refresh token is invalid', async () => {
+    localStorage.setItem('techink_current_user', '{"id":1}');
+    apiClient.setToken('stale');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(
+      { success: false, error: { code: 'UNAUTHORIZED', message: 'invalid' } },
+      { status: 401 },
+    )));
+
+    const result = await apiClient.tryRefreshToken();
+
+    expect(result).toEqual({ ok: false, reason: 'INVALID_REFRESH' });
+    expect(apiClient.getToken()).toBeNull();
+    expect(localStorage.getItem('techink_current_user')).toBeNull();
+  });
 });

@@ -4,12 +4,13 @@ Messages API - Private messaging between users.
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_, and_, update, delete, desc
+from sqlalchemy import select, func, or_, and_, update, desc, case
 import time
 
 from app.api.deps import get_db, get_current_active_user
 from app.models.user import User
 from app.models.message import Message
+from app.models.follow import Follow
 from app.schemas import ServiceResponse
 from app.schemas.message import (
     MessageCreate, MessageResponse, ConversationResponse,
@@ -19,6 +20,16 @@ from app.schemas.message import (
 router = APIRouter(prefix="/messages", tags=["Messages"])
 
 PAGE_SIZE = 50
+
+
+def _visible_to_user(message: Message, user_id: int) -> bool:
+    if message.is_deleted:
+        return False
+    if message.sender_id == user_id:
+        return not message.deleted_by_sender
+    if message.receiver_id == user_id:
+        return not message.deleted_by_receiver
+    return False
 
 
 def _to_response(msg: Message) -> MessageResponse:
@@ -46,15 +57,22 @@ async def get_conversations(
 
     A conversation exists if at least one non-deleted message has been
     exchanged between the current user and another user.
+
+    Uses window functions to fetch latest messages and unread counts
+    in fixed 3 queries regardless of conversation count.
     """
     uid = current_user.id
 
-    # Find all distinct conversation partners
+    # ── Partner list ──────────────────────────────────────────
     sent_subq = select(Message.receiver_id).where(
-        Message.sender_id == uid, Message.is_deleted.is_(False)
+        Message.sender_id == uid,
+        Message.is_deleted.is_(False),
+        Message.deleted_by_sender.is_(False),
     )
     recv_subq = select(Message.sender_id).where(
-        Message.receiver_id == uid, Message.is_deleted.is_(False)
+        Message.receiver_id == uid,
+        Message.is_deleted.is_(False),
+        Message.deleted_by_receiver.is_(False),
     )
     partner_ids_query = select(sent_subq.union(recv_subq).subquery().c.receiver_id)
     result = await db.execute(partner_ids_query)
@@ -66,54 +84,98 @@ async def get_conversations(
             data=ConversationListResult(conversations=[], total=0),
         )
 
-    # Fetch user info for partners
+    # ── Latest message per partner (window function, 1 query) ─
+    partner_expr = case(
+        (Message.sender_id == uid, Message.receiver_id),
+        else_=Message.sender_id,
+    ).label("partner_id")
+
+    base_msg = (
+        select(
+            Message.id.label("msg_id"),
+            Message.content,
+            Message.created_at,
+            partner_expr,
+        )
+        .where(
+            Message.is_deleted.is_(False),
+            or_(
+                and_(Message.sender_id == uid, Message.deleted_by_sender.is_(False)),
+                and_(Message.receiver_id == uid, Message.deleted_by_receiver.is_(False)),
+            ),
+        )
+        .cte("base_msg")
+    )
+
+    ranked = (
+        select(
+            base_msg.c.partner_id,
+            base_msg.c.content,
+            base_msg.c.created_at,
+            base_msg.c.msg_id,
+            func.row_number()
+            .over(
+                partition_by=base_msg.c.partner_id,
+                order_by=[desc(base_msg.c.created_at), desc(base_msg.c.msg_id)],
+            )
+            .label("rn"),
+        )
+        .cte("ranked")
+    )
+
+    latest_result = await db.execute(
+        select(
+            ranked.c.partner_id,
+            ranked.c.content,
+            ranked.c.created_at,
+            ranked.c.msg_id,
+        ).where(ranked.c.rn == 1)
+    )
+    latest_rows = {
+        row[0]: row for row in latest_result.fetchall()
+    }  # partner_id -> (partner_id, content, created_at, msg_id)
+
+    # ── Unread counts per partner (1 query, group by) ────────
+    unread_result = await db.execute(
+        select(Message.sender_id, func.count())
+        .where(
+            Message.receiver_id == uid,
+            Message.is_read.is_(False),
+            Message.is_deleted.is_(False),
+            Message.deleted_by_receiver.is_(False),
+            Message.sender_id.in_(partner_ids),
+        )
+        .group_by(Message.sender_id)
+    )
+    unread_map = {row[0]: row[1] for row in unread_result.fetchall()}
+
+    # ── User info (1 batch query) ────────────────────────────
     user_result = await db.execute(
         select(User).where(User.id.in_(partner_ids))
     )
     user_map = {u.id: u for u in user_result.scalars().all()}
 
+    # ── Assemble ─────────────────────────────────────────────
     conversations = []
     for partner_id in partner_ids:
+        latest = latest_rows.get(partner_id)
+        if not latest:
+            continue
         partner = user_map.get(partner_id)
         if not partner:
             continue
 
-        # Get last message between the two users
-        last_msg_result = await db.execute(
-            select(Message)
-            .where(
-                or_(
-                    and_(Message.sender_id == uid, Message.receiver_id == partner_id),
-                    and_(Message.sender_id == partner_id, Message.receiver_id == uid),
-                ),
-                Message.is_deleted.is_(False),
-            )
-            .order_by(desc(Message.created_at))
-            .limit(1)
-        )
-        last_msg = last_msg_result.scalar_one_or_none()
-        if not last_msg:
-            continue
-
-        # Count unread messages received from this partner
-        unread_result = await db.execute(
-            select(func.count()).select_from(Message).where(
-                Message.sender_id == partner_id,
-                Message.receiver_id == uid,
-                Message.is_read.is_(False),
-                Message.is_deleted.is_(False),
+        created_at = latest[2]
+        conversations.append(
+            ConversationResponse(
+                user_id=partner_id,
+                username=partner.username,
+                avatar=partner.avatar,
+                last_message=latest[1],  # content
+                last_message_at=int(created_at.timestamp() * 1000) if created_at else 0,
+                unread_count=unread_map.get(partner_id, 0),
             )
         )
-        unread_count = unread_result.scalar() or 0
-
-        conversations.append(ConversationResponse(
-            user_id=partner_id,
-            username=partner.username,
-            avatar=partner.avatar,
-            last_message=last_msg.content,
-            last_message_at=int(last_msg.created_at.timestamp() * 1000) if last_msg.created_at else 0,
-            unread_count=unread_count,
-        ))
 
     conversations.sort(key=lambda c: c.last_message_at, reverse=True)
 
@@ -146,11 +208,19 @@ async def get_conversation_messages(
 
     # Build base WHERE clause
     base_where = and_(
-        or_(
-            and_(Message.sender_id == uid, Message.receiver_id == user_id),
-            and_(Message.sender_id == user_id, Message.receiver_id == uid),
-        ),
         Message.is_deleted.is_(False),
+        or_(
+            and_(
+                Message.sender_id == uid,
+                Message.receiver_id == user_id,
+                Message.deleted_by_sender.is_(False),
+            ),
+            and_(
+                Message.sender_id == user_id,
+                Message.receiver_id == uid,
+                Message.deleted_by_receiver.is_(False),
+            ),
+        ),
     )
 
     # Count total (needed for has_more in both modes)
@@ -188,6 +258,8 @@ async def get_conversation_messages(
             Message.sender_id == user_id,
             Message.receiver_id == uid,
             Message.is_read.is_(False),
+            Message.is_deleted.is_(False),
+            Message.deleted_by_receiver.is_(False),
         )
         .values(is_read=True, read_at=now_ms, status="read")
     )
@@ -238,18 +310,25 @@ async def send_message(
         )
 
     # Require mutual follow for DMs (friends-only messaging)
-    from app.models.follow import Follow
     mutual_result = await db.execute(
-        select(Follow).where(
-            Follow.follower_id == current_user.id,
-            Follow.following_id == data.receiver_id,
+        select(func.count()).select_from(Follow).where(
+            or_(
+                and_(
+                    Follow.follower_id == current_user.id,
+                    Follow.following_id == data.receiver_id,
+                ),
+                and_(
+                    Follow.follower_id == data.receiver_id,
+                    Follow.following_id == current_user.id,
+                ),
+            )
         )
     )
-    is_following = mutual_result.scalar_one_or_none() is not None
-    if not is_following:
+    mutual_edges = mutual_result.scalar() or 0
+    if mutual_edges < 2:
         return ServiceResponse(
             success=False,
-            error={"code": "FORBIDDEN", "message": "Must follow user to send messages"},
+            error={"code": "FORBIDDEN", "message": "Must be mutual followers to send messages"},
         )
 
     msg = Message(
@@ -276,7 +355,7 @@ async def mark_message_read(
 ):
     """Mark a single received message as read."""
     msg = await db.get(Message, message_id)
-    if not msg:
+    if not msg or not _visible_to_user(msg, current_user.id):
         return ServiceResponse(
             success=False, error={"code": "NOT_FOUND", "message": "Message not found"},
         )
@@ -312,6 +391,8 @@ async def mark_conversation_read(
             Message.sender_id == user_id,
             Message.receiver_id == uid,
             Message.is_read.is_(False),
+            Message.is_deleted.is_(False),
+            Message.deleted_by_receiver.is_(False),
         )
         .values(is_read=True, read_at=now_ms, status="read")
     )
@@ -341,6 +422,7 @@ async def get_unread_count(
             Message.receiver_id == uid,
             Message.is_read.is_(False),
             Message.is_deleted.is_(False),
+            Message.deleted_by_receiver.is_(False),
         )
         .group_by(Message.sender_id)
     )
@@ -368,9 +450,9 @@ async def delete_message(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Soft-delete a message. Only sender or receiver can delete (their own view)."""
+    """Hide a message from the current user's own conversation view."""
     msg = await db.get(Message, message_id)
-    if not msg:
+    if not msg or not _visible_to_user(msg, current_user.id):
         return ServiceResponse(
             success=False, error={"code": "NOT_FOUND", "message": "Message not found"},
         )
@@ -379,7 +461,10 @@ async def delete_message(
             success=False, error={"code": "FORBIDDEN", "message": "Not your message"},
         )
 
-    msg.is_deleted = True
+    if msg.sender_id == current_user.id:
+        msg.deleted_by_sender = True
+    else:
+        msg.deleted_by_receiver = True
     await db.commit()
 
     return ServiceResponse(success=True, data={"message": "Message deleted"})
