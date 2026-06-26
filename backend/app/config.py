@@ -138,6 +138,11 @@ class Settings(BaseSettings):
         except Exception:
             return ["Content-Type", "Authorization"]
 
+    # Rate Limiting
+    RATE_LIMIT_BACKEND: str = "memory"  # "memory" or "redis"
+    RATE_LIMIT_ENABLED: bool = True
+    REDIS_URL: str = ""  # redis://localhost:6379/0 — required for redis backend
+
     # Media / Uploads
     MEDIA_BASE_URL: str = ""  # CDN or object storage base URL for uploaded files
 

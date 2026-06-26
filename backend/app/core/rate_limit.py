@@ -1,12 +1,19 @@
 """
 Rate Limiting Module
 
-Provides rate limiting functionality for API endpoints.
-Uses in-memory storage with TTL for rate limit tracking.
+Supports two backends:
+- memory: in-process sliding window (dev/test)
+- redis: distributed sorted-set sliding window via Lua script (production)
+
+Configure via settings:
+- RATE_LIMIT_BACKEND=memory|redis (default: memory)
+- REDIS_URL=redis://... (required for redis backend)
 """
 
 import os
 import time
+import logging
+import asyncio
 from collections import defaultdict
 from threading import Lock
 from typing import Callable, Optional, Set
@@ -14,6 +21,8 @@ from functools import wraps
 
 from fastapi import Request, HTTPException, status
 from fastapi.responses import JSONResponse
+
+logger = logging.getLogger(__name__)
 
 
 # P9-108: Trusted proxy IPs for X-Forwarded-For validation
@@ -189,10 +198,12 @@ def create_rate_limit_middleware(
         # Generate key
         key = get_rate_limit_key(request, limit_type)
 
-        # Check rate limit
-        allowed, remaining, retry_after = rate_limiter.is_allowed(
-            key, max_requests, window_seconds
-        )
+        # Check rate limit (handle both sync and async backends)
+        result = rate_limiter.is_allowed(key, max_requests, window_seconds)
+        if asyncio.iscoroutine(result):
+            allowed, remaining, retry_after = await result
+        else:
+            allowed, remaining, retry_after = result
 
         if not allowed:
             raise HTTPException(
@@ -308,11 +319,13 @@ class RateLimitMiddleware:
         max_requests = limits["requests"]
         window_seconds = limits["window"]
 
-        # Check rate limit
+        # Check rate limit (handle both sync and async backends)
         key = get_rate_limit_key(request, limit_type)
-        allowed, remaining, retry_after = rate_limiter.is_allowed(
-            key, max_requests, window_seconds
-        )
+        result = rate_limiter.is_allowed(key, max_requests, window_seconds)
+        if asyncio.iscoroutine(result):
+            allowed, remaining, retry_after = await result
+        else:
+            allowed, remaining, retry_after = result
 
         if not allowed:
             # Send 429 response
@@ -377,3 +390,111 @@ class RateLimitMiddleware:
 
         # Default API limit
         return "api_default"
+
+
+# ──────────────────── Redis Backend ────────────────────
+
+_SLIDING_WINDOW_SCRIPT = """
+local key = KEYS[1]
+local now = tonumber(ARGV[1])
+local window = tonumber(ARGV[2])
+local max_requests = tonumber(ARGV[3])
+local cutoff = now - window
+redis.call('ZREMRANGEBYSCORE', key, '-inf', cutoff)
+local count = redis.call('ZCARD', key)
+if count < max_requests then
+    redis.call('ZADD', key, now, now .. ':' .. count)
+    redis.call('EXPIRE', key, window + 1)
+    return {1, max_requests - count - 1}
+else
+    return {0, 0}
+end
+"""
+
+
+class RedisRateLimiter:
+    """Distributed rate limiter backed by Redis sorted sets."""
+
+    def __init__(self, redis_url: str) -> None:
+        self._redis_url = redis_url
+        self._redis = None
+        self._script_sha: Optional[str] = None
+        self._init_lock = asyncio.Lock()
+
+    async def _ensure_initialized(self) -> None:
+        if self._redis is not None:
+            return
+        async with self._init_lock:
+            if self._redis is not None:
+                return
+            try:
+                import redis.asyncio as aioredis
+            except ImportError:
+                raise ImportError("redis package required: pip install redis")
+            self._redis = aioredis.from_url(self._redis_url, decode_responses=False)
+            try:
+                self._script_sha = await self._redis.script_load(_SLIDING_WINDOW_SCRIPT)
+            except Exception as exc:
+                logger.warning("Redis unavailable for rate limiting: %s", exc)
+                self._redis = None
+
+    async def is_allowed(
+        self, key: str, max_requests: int, window_seconds: int
+    ) -> tuple[bool, int, int]:
+        """Check rate limit via Redis. Returns (allowed, remaining, retry_after)."""
+        await self._ensure_initialized()
+        if self._redis is None or self._script_sha is None:
+            return True, max_requests, 0  # fail-open
+
+        try:
+            now = time.time()
+            result = await self._redis.evalsha(
+                self._script_sha, 1,
+                f"rl:{key}", str(now), str(window_seconds), str(max_requests),
+            )
+            allowed, remaining = result
+            if allowed:
+                return True, int(remaining), 0
+            return False, 0, window_seconds
+        except Exception as exc:
+            logger.error("Rate limiter Redis error: %s", exc)
+            return True, max_requests, 0  # fail-open
+
+
+# ──────────────────── Factory ────────────────────
+
+
+def create_rate_limiter(backend: str = "memory", redis_url: str = "") -> "RateLimiter":
+    """Create the appropriate rate limiter.
+
+    Returns the in-memory RateLimiter for 'memory' backend,
+    or a wrapper that delegates Redis calls through the async backend.
+
+    The wrapper preserves the synchronous RateLimiter interface
+    so existing callers (middleware, decorator) work unchanged.
+    """
+    if backend == "redis":
+        if not redis_url:
+            raise ValueError("REDIS_URL required when RATE_LIMIT_BACKEND=redis")
+        redis_backend = RedisRateLimiter(redis_url)
+        # Wrap Redis async backend in a sync-compatible RateLimiter
+        limiter = RateLimiter()
+
+        # Save original is_allowed
+        _sync_is_allowed = limiter.is_allowed
+
+        async def _redis_is_allowed(
+            key: str, max_requests: int, window_seconds: int
+        ) -> tuple[bool, int, int]:
+            return await redis_backend.is_allowed(key, max_requests, window_seconds)
+
+        # Replace with an async-aware version
+        def _async_is_allowed(key: str, max_requests: int, window_seconds: int):
+            # Called from async context — return coroutine for caller to await
+            return _redis_is_allowed(key, max_requests, window_seconds)
+
+        limiter.is_allowed = _async_is_allowed  # type: ignore[method-assign]
+        limiter._redis_backend = redis_backend  # type: ignore[attr-defined]
+        return limiter
+
+    return RateLimiter()  # default: in-memory

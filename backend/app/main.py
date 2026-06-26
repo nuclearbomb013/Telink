@@ -15,7 +15,7 @@ from app.config import settings
 from app.db.session import init_db, close_db
 from app.api.v1.router import api_router
 from app.core.logging import setup_logging, get_logger
-from app.core.rate_limit import RateLimitMiddleware
+from app.core.rate_limit import RateLimitMiddleware, rate_limiter, create_rate_limiter
 from app.core.security_headers import SecurityHeadersMiddleware
 
 # Initialize logging
@@ -66,9 +66,19 @@ def create_app() -> FastAPI:
         allow_headers=settings.cors_headers_list,
     )
 
+    # Configure rate limiter backend from settings
+    global rate_limiter
+    rate_limiter = create_rate_limiter(
+        backend=settings.RATE_LIMIT_BACKEND,
+        redis_url=settings.REDIS_URL,
+    )
+
     # Add rate limiting middleware (must be after CORS for proper handling)
-    app.add_middleware(RateLimitMiddleware)
-    logger.info("rate_limit_middleware_enabled")
+    if settings.RATE_LIMIT_ENABLED:
+        app.add_middleware(RateLimitMiddleware)
+        logger.info("rate_limit_middleware_enabled", extra={"backend": settings.RATE_LIMIT_BACKEND})
+    else:
+        logger.info("rate_limit_middleware_disabled")
 
     # Add security headers middleware
     app.add_middleware(SecurityHeadersMiddleware)
