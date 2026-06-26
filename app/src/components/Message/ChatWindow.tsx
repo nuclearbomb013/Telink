@@ -119,7 +119,10 @@ const ChatWindow = ({
   // 状态
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isFriend, setIsFriend] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  type FriendState = 'checking' | 'mutual' | 'not_mutual';
+  const [friendState, setFriendState] = useState<FriendState>('checking');
+  const [hasMore, setHasMore] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -133,25 +136,26 @@ const ChatWindow = ({
    */
   useEffect(() => {
     const checkFriend = async () => {
+      setFriendState('checking');
       try {
         const response = await followService.getFollowStatus(targetUserId, currentUser.id);
-        if (response.success && response.data) {
-          setIsFriend(response.data.isMutual);
+        if (response.success && response.data && response.data.isMutual) {
+          setFriendState('mutual');
         } else {
-          setIsFriend(false);
+          setFriendState('not_mutual');
         }
       } catch {
-        setIsFriend(false);
+        setFriendState('not_mutual');
       }
     };
     checkFriend();
   }, [currentUser.id, targetUserId]);
 
   /**
-   * 加载消息
+   * 加载首屏消息
    */
   const loadMessages = useCallback(async () => {
-    if (!isFriend) {
+    if (friendState === 'not_mutual') {
       setIsLoading(false);
       return;
     }
@@ -168,6 +172,7 @@ const ChatWindow = ({
 
       if (response.success && response.data) {
         setMessages(response.data.messages);
+        setHasMore(response.data.hasMore);
       } else {
         setError(response.error?.message || '加载消息失败');
       }
@@ -176,14 +181,46 @@ const ChatWindow = ({
     } finally {
       setIsLoading(false);
     }
-  }, [currentUser.id, targetUserId, isFriend]);
+  }, [currentUser.id, targetUserId, friendState]);
 
   /**
-   * 初始化加载
+   * 加载更早的消息（历史分页）
+   */
+  const loadMoreMessages = useCallback(async () => {
+    if (isLoadingMore || !hasMore) return;
+
+    const oldestId = messages.length > 0 ? messages[0].id : undefined;
+    if (!oldestId) return;
+
+    setIsLoadingMore(true);
+    try {
+      const response = await messageService.getMessages({
+        userId: targetUserId,
+        currentUserId: currentUser.id,
+        limit: 30,
+        beforeId: oldestId,
+      });
+
+      if (response.success && response.data) {
+        // Prepend older messages before current messages
+        setMessages(prev => [...response.data!.messages, ...prev]);
+        setHasMore(response.data.hasMore);
+      }
+    } catch {
+      // Silently fail for load-more
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [isLoadingMore, hasMore, messages, targetUserId, currentUser.id]);
+
+  /**
+   * 初始化加载（仅在 friendState 确定后触发）
    */
   useEffect(() => {
-    loadMessages();
-  }, [loadMessages]);
+    if (friendState !== 'checking') {
+      loadMessages();
+    }
+  }, [loadMessages, friendState]);
 
   /**
    * 滚动到底部
@@ -205,7 +242,7 @@ const ChatWindow = ({
    * 发送消息
    */
   const handleSend = async () => {
-    if (!inputValue.trim() || isSending || !isFriend) return;
+    if (!inputValue.trim() || isSending || friendState !== 'mutual') return;
 
     const content = inputValue.trim();
     setInputValue('');
@@ -279,7 +316,7 @@ const ChatWindow = ({
               {targetUsername}
             </h2>
             <p className="text-xs text-brand-dark-gray/60 font-roboto">
-              {isFriend ? '好友' : '非好友'}
+              {friendState === 'mutual' ? '好友' : '非好友'}
             </p>
           </div>
         </button>
@@ -298,7 +335,20 @@ const ChatWindow = ({
         ref={scrollRef}
         className="flex-1 overflow-y-auto p-4 space-y-3"
       >
-        {/* 加载中 */}
+        {/* 加载更早消息 */}
+        {hasMore && !isLoading && (
+          <div className="flex justify-center py-2">
+            <button
+              onClick={loadMoreMessages}
+              disabled={isLoadingMore}
+              className="px-4 py-1 text-xs text-brand-dark-gray/60 hover:text-brand-text transition-colors"
+            >
+              {isLoadingMore ? '加载中...' : '加载更早的消息'}
+            </button>
+          </div>
+        )}
+
+        {/* 加载中（初始） */}
         {isLoading && (
           <div className="flex items-center justify-center py-8">
             <div className="animate-spin text-brand-text">
@@ -307,8 +357,8 @@ const ChatWindow = ({
           </div>
         )}
 
-        {/* 非好友提示 */}
-        {!isLoading && !isFriend && (
+        {/* 非好友提示（仅在确认非好友后显示） */}
+        {!isLoading && friendState === 'not_mutual' && (
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <User size={48} className="text-brand-dark-gray/30 mb-4" />
             <p className="font-roboto text-brand-dark-gray/60">
@@ -336,14 +386,14 @@ const ChatWindow = ({
         )}
 
         {/* 消息列表 */}
-        {!isLoading && isFriend && messages.length === 0 && (
+        {!isLoading && friendState === 'mutual' && messages.length === 0 && (
           <div className="text-center py-8 text-brand-dark-gray/60">
             <p className="font-roboto">暂无消息</p>
             <p className="text-sm mt-1">发送第一条消息开始聊天</p>
           </div>
         )}
 
-        {!isLoading && isFriend && messages.map((message) => (
+        {!isLoading && friendState === 'mutual' && messages.map((message) => (
           <MessageBubble
             key={message.id}
             message={message}
@@ -360,7 +410,7 @@ const ChatWindow = ({
       </div>
 
       {/* 输入区域 */}
-      {isFriend && (
+      {friendState === 'mutual' && (
         <footer className="px-4 py-3 bg-white/95 border-t border-brand-border/30">
           <div className="flex items-center gap-2">
             <Input

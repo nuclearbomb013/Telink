@@ -113,6 +113,9 @@ class TestMigrationModelConsistency:
         index_names = {idx.name for idx in Message.__table__.indexes}
         assert "ix_messages_sender_receiver" in index_names
         assert "ix_messages_receiver_sender" in index_names
+        assert "ix_messages_sender_visible_latest" in index_names
+        assert "ix_messages_receiver_visible_latest" in index_names
+        assert "ix_messages_unread_receiver_sender" in index_names
 
     def test_message_has_per_user_delete_flags(self):
         from app.models.message import Message

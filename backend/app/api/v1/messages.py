@@ -331,10 +331,17 @@ async def send_message(
             error={"code": "FORBIDDEN", "message": "Must be mutual followers to send messages"},
         )
 
+    content = data.content.strip()
+    if not content:
+        return ServiceResponse(
+            success=False,
+            error={"code": "INVALID", "message": "Message content cannot be empty"},
+        )
+
     msg = Message(
         sender_id=current_user.id,
         receiver_id=data.receiver_id,
-        content=data.content.strip(),
+        content=content,
         status="sent",
     )
     db.add(msg)
