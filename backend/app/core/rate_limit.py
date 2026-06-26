@@ -267,9 +267,11 @@ def rate_limit(
 
             if request and isinstance(request, Request):
                 key = get_rate_limit_key(request, limit_type)
-                allowed, remaining, retry_after = rate_limiter.is_allowed(
-                    key, max_requests, window_seconds
-                )
+                result = rate_limiter.is_allowed(key, max_requests, window_seconds)
+                if asyncio.iscoroutine(result):
+                    allowed, remaining, retry_after = await result
+                else:
+                    allowed, remaining, retry_after = result
 
                 if not allowed:
                     raise HTTPException(
@@ -479,9 +481,6 @@ def create_rate_limiter(backend: str = "memory", redis_url: str = "") -> "RateLi
         redis_backend = RedisRateLimiter(redis_url)
         # Wrap Redis async backend in a sync-compatible RateLimiter
         limiter = RateLimiter()
-
-        # Save original is_allowed
-        _sync_is_allowed = limiter.is_allowed
 
         async def _redis_is_allowed(
             key: str, max_requests: int, window_seconds: int
