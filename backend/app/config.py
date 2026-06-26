@@ -138,6 +138,9 @@ class Settings(BaseSettings):
         except Exception:
             return ["Content-Type", "Authorization"]
 
+    # Media / Uploads
+    MEDIA_BASE_URL: str = ""  # CDN or object storage base URL for uploaded files
+
     # P10-116: Use Pydantic v2 SettingsConfigDict instead of class Config
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -232,8 +232,13 @@ async def _do_upload_image(file: UploadFile, user: User) -> ServiceResponse[Uplo
 
     safe_ext, safe_mime, sanitized, new_filename = result
 
-    # Generate URL
-    base_url = "http://localhost:8000" if settings.DEBUG else ""
+    # Generate URL — use MEDIA_BASE_URL in production, localhost in dev
+    if settings.MEDIA_BASE_URL:
+        base_url = settings.MEDIA_BASE_URL.rstrip("/")
+    elif settings.DEBUG:
+        base_url = "http://localhost:8000"
+    else:
+        base_url = ""
     url = f"{base_url}/uploads/images/{new_filename}"
 
     # Audit log

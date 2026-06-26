@@ -15,13 +15,11 @@ class Follow(BaseModel):
         Integer,
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     following_id = Column(
         Integer,
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
 
     __table_args__ = (
