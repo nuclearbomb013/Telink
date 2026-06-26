@@ -100,23 +100,6 @@ async def get_db() -> Generator:
             raise
 
 
-async def is_token_revoked(db: AsyncSession, jti: str) -> bool:
-    """
-    Check if a token's JTI is in the blacklist.
-
-    Args:
-        db: Database session
-        jti: JWT ID to check
-
-    Returns:
-        True if token is revoked, False otherwise
-    """
-    result = await db.execute(
-        select(TokenBlacklist).where(TokenBlacklist.jti == jti)
-    )
-    return result.scalar_one_or_none() is not None
-
-
 async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: AsyncSession = Depends(get_db)
@@ -139,7 +122,7 @@ async def get_current_user(
     if not user_id:
         raise UnauthorizedException("Invalid or expired token")
 
-    # Check if token is revoked (cached, TTL 60s)
+    # Check if token is revoked (cached, TTL 30s)
     if jti and await _cached_is_token_revoked(db, jti):
         raise UnauthorizedException("Token has been revoked")
 
