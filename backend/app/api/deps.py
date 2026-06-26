@@ -21,16 +21,36 @@ security = HTTPBearer(auto_error=False)
 # ── Lightweight TTL caches for high-frequency auth queries ──
 # Avoids 2 DB round-trips on every authenticated request.
 # TTLs are kept short so permission changes propagate quickly.
+# Maxsize limits prevent unbounded growth in long-running processes.
+# Amortized eviction runs on insert — old entries are cleaned when the
+# cache exceeds maxsize, keeping memory bounded.
+
+_MAX_CACHE_SIZE = 10_000
 
 _USER_CACHE: dict[int, tuple[float, User]] = {}
-_USER_CACHE_TTL = 30  # seconds — user entity rarely changes
+_USER_CACHE_TTL = 10  # seconds — deactivation/role change propagates within 10s
 
 _BLACKLIST_CACHE: dict[str, tuple[float, bool]] = {}
-_BLACKLIST_CACHE_TTL = 60  # seconds — blacklist entries have JWT expiry ceiling
+_BLACKLIST_CACHE_TTL = 30  # seconds — JWT lifetime ceiling on blacklist entries
+
+
+def _maybe_evict(cache: dict, ttl: float, now: float, maxsize: int) -> None:
+    """Amortized eviction: if cache exceeds maxsize, drop expired entries."""
+    if len(cache) <= maxsize:
+        return
+    expired = [k for k, (ts, _) in cache.items() if (now - ts) >= ttl]
+    for k in expired:
+        del cache[k]
+    # If still over maxsize after clearing expired, drop oldest entries
+    if len(cache) > maxsize:
+        excess = len(cache) - maxsize
+        oldest = sorted(cache.items(), key=lambda x: x[1][0])[:excess]
+        for k, _ in oldest:
+            del cache[k]
 
 
 async def _cached_get_user(db: AsyncSession, user_id: int) -> User | None:
-    """Fetch user with short in-process TTL cache."""
+    """Fetch user with short in-process TTL cache (10s)."""
     now = time.monotonic()
     entry = _USER_CACHE.get(user_id)
     if entry and (now - entry[0]) < _USER_CACHE_TTL:
@@ -39,12 +59,13 @@ async def _cached_get_user(db: AsyncSession, user_id: int) -> User | None:
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if user:
+        _maybe_evict(_USER_CACHE, _USER_CACHE_TTL, now, _MAX_CACHE_SIZE)
         _USER_CACHE[user_id] = (now, user)
     return user
 
 
 async def _cached_is_token_revoked(db: AsyncSession, jti: str) -> bool:
-    """Check blacklist with short in-process TTL cache."""
+    """Check blacklist with short in-process TTL cache (30s)."""
     now = time.monotonic()
     entry = _BLACKLIST_CACHE.get(jti)
     if entry and (now - entry[0]) < _BLACKLIST_CACHE_TTL:
@@ -54,6 +75,7 @@ async def _cached_is_token_revoked(db: AsyncSession, jti: str) -> bool:
         select(TokenBlacklist).where(TokenBlacklist.jti == jti)
     )
     revoked = result.scalar_one_or_none() is not None
+    _maybe_evict(_BLACKLIST_CACHE, _BLACKLIST_CACHE_TTL, now, _MAX_CACHE_SIZE)
     _BLACKLIST_CACHE[jti] = (now, revoked)
     return revoked
 
